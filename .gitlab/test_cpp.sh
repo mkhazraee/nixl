@@ -78,6 +78,7 @@ cd ${INSTALL_DIR}
 ./bin/serdes_test
 ./bin/gtest
 ./bin/test_plugin
+./bin/test_query_mem
 
 # Run NIXL client-server test
 ./bin/nixl_test target 127.0.0.1 1234&
