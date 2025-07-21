@@ -15,10 +15,11 @@
 
 import uuid
 
-import nixl._bindings as bindings
-import nixl._utils as utils
 import pytest
 import torch
+
+import nixl._bindings as bindings
+import nixl._utils as utils
 from nixl._api import nixl_agent, nixl_agent_config
 
 # NIXL pytest fixtures
@@ -179,7 +180,6 @@ def test_improper_get_reg_descs(one_empty_agent, one_xfer_list):
 
 
 def test_noncontiguous_tensor(one_empty_agent):
-
     cont_tensor = torch.arange(8).reshape(2, 4)
     non_cont_tensor = torch.transpose(cont_tensor, 0, 1)
     assert non_cont_tensor.is_contiguous() is False
