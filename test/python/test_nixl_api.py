@@ -15,10 +15,10 @@
 
 import uuid
 
-import pytest
-
 import nixl._bindings as bindings
 import nixl._utils as utils
+import pytest
+import torch
 from nixl._api import nixl_agent, nixl_agent_config
 
 # NIXL pytest fixtures
@@ -176,6 +176,19 @@ def test_improper_get_reg_descs(one_empty_agent, one_xfer_list):
     # Passing reg list will not work
     ret = one_empty_agent.get_reg_descs(one_xfer_list)
     assert ret is None
+
+
+def test_noncontiguous_tensor(one_empty_agent):
+
+    cont_tensor = torch.arange(8).reshape(2, 4)
+    non_cont_tensor = torch.transpose(cont_tensor, 0, 1)
+    assert non_cont_tensor.is_contiguous() is False
+
+    reg_descs = one_empty_agent.get_reg_descs(non_cont_tensor)
+    assert reg_descs is None
+
+    xfer_descs = one_empty_agent.get_xfer_descs(non_cont_tensor)
+    assert xfer_descs is None
 
 
 # monkeypatch limits scope of env change to this test
