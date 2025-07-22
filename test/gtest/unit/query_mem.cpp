@@ -19,6 +19,8 @@
 #include <fstream>
 #include <filesystem>
 #include "file/file_utils.h"
+#include "nixl.h"
+#include "nixl_descriptors.h"
 
 class QueryMemTest : public ::testing::Test {
 protected:
@@ -118,4 +120,147 @@ TEST_F(QueryMemTest, QueryFileInfoListWithEmptyFilenames) {
     EXPECT_FALSE(resp[0].accessible);
     EXPECT_FALSE(resp[1].accessible);
     EXPECT_FALSE(resp[2].accessible);
+}
+
+// Tests using the queryMem API directly
+TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
+    // Create agent
+    nixlAgentConfig cfg(false, false, 0, nixl_thread_sync_t::NIXL_THREAD_SYNC_RW);
+    nixlAgent agent("test_agent", cfg);
+
+    // Create backend
+    nixlBackendH* backend_handle = nullptr;
+    nixl_b_params_t params;
+    auto status = agent.createBackend("POSIX", params, backend_handle);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+    ASSERT_NE(backend_handle, nullptr);
+
+    // Create descriptor list with existing files
+    nixlDescList<nixlBlobDesc> descs(FILE_SEG);
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+
+    // Create extra params with backend
+    nixl_opt_args_t extra_params;
+    extra_params.backends = {backend_handle};
+
+    std::vector<nixl_query_resp_t> resp;
+    status = agent.queryMem(descs, resp, &extra_params);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 2);
+    EXPECT_TRUE(resp[0].accessible);
+    EXPECT_TRUE(resp[1].accessible);
+    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
+    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+}
+
+TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
+    // Create agent
+    nixlAgentConfig cfg(false, false, 0, nixl_thread_sync_t::NIXL_THREAD_SYNC_RW);
+    nixlAgent agent("test_agent", cfg);
+
+    // Create backend
+    nixlBackendH* backend_handle = nullptr;
+    nixl_b_params_t params;
+    auto status = agent.createBackend("POSIX", params, backend_handle);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+    ASSERT_NE(backend_handle, nullptr);
+
+    // Create descriptor list with existing and non-existing files
+    nixlDescList<nixlBlobDesc> descs(FILE_SEG);
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, non_existent_file));
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+
+    // Create extra params with backend
+    nixl_opt_args_t extra_params;
+    extra_params.backends = {backend_handle};
+
+    std::vector<nixl_query_resp_t> resp;
+    status = agent.queryMem(descs, resp, &extra_params);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 3);
+    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
+    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
+}
+
+TEST_F(QueryMemTest, QueryMemWithEmptyDescriptors) {
+    // Create agent
+    nixlAgentConfig cfg(false, false, 0, nixl_thread_sync_t::NIXL_THREAD_SYNC_RW);
+    nixlAgent agent("test_agent", cfg);
+
+    // Create backend
+    nixlBackendH* backend_handle = nullptr;
+    nixl_b_params_t params;
+    auto status = agent.createBackend("POSIX", params, backend_handle);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+    ASSERT_NE(backend_handle, nullptr);
+
+    // Create empty descriptor list
+    nixlDescList<nixlBlobDesc> descs(FILE_SEG);
+
+    // Create extra params with backend
+    nixl_opt_args_t extra_params;
+    extra_params.backends = {backend_handle};
+
+    std::vector<nixl_query_resp_t> resp;
+    status = agent.queryMem(descs, resp, &extra_params);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 0);
+}
+
+TEST_F(QueryMemTest, QueryMemWithEmptyFilenames) {
+    // Create agent
+    nixlAgentConfig cfg(false, false, 0, nixl_thread_sync_t::NIXL_THREAD_SYNC_RW);
+    nixlAgent agent("test_agent", cfg);
+
+    // Create backend
+    nixlBackendH* backend_handle = nullptr;
+    nixl_b_params_t params;
+    auto status = agent.createBackend("POSIX", params, backend_handle);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+    ASSERT_NE(backend_handle, nullptr);
+
+    // Create descriptor list with empty filenames
+    nixlDescList<nixlBlobDesc> descs(FILE_SEG);
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, ""));
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, ""));
+
+    // Create extra params with backend
+    nixl_opt_args_t extra_params;
+    extra_params.backends = {backend_handle};
+
+    std::vector<nixl_query_resp_t> resp;
+    status = agent.queryMem(descs, resp, &extra_params);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 2);
+    EXPECT_FALSE(resp[0].accessible);
+    EXPECT_FALSE(resp[1].accessible);
+}
+
+TEST_F(QueryMemTest, QueryMemDirectTest) {
+    // Test the queryMem functionality directly using the file utilities
+    // This bypasses the agent/backend complexity
+
+    // Create descriptor list with existing files
+    nixlDescList<nixlBlobDesc> descs(FILE_SEG);
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+
+    // Extract metadata from descriptors which are file names
+    std::vector<nixl_blob_t> metadata(descs.descCount());
+    for (int i = 0; i < descs.descCount(); ++i) {
+        metadata[i] = descs[i].metaInfo;
+    }
+
+    // Use the file utilities directly
+    std::vector<nixl_query_resp_t> resp;
+    nixl_status_t status = nixl::queryFileInfoList(metadata, resp);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 2);
+    EXPECT_TRUE(resp[0].accessible);
+    EXPECT_TRUE(resp[1].accessible);
+    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
+    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
 }
