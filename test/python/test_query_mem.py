@@ -21,7 +21,7 @@ import os
 import tempfile
 import unittest
 
-import _bindings as nixl_bindings
+import nixl._bindings as nixl_bindings
 
 
 class TestQueryMem(unittest.TestCase):

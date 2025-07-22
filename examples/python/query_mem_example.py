@@ -21,7 +21,7 @@ import tempfile
 
 # Try to import the NIXL bindings
 try:
-    import _bindings as nixl_bindings
+    import nixl._bindings as nixl_bindings
 
     NIXL_AVAILABLE = True
 except ImportError:

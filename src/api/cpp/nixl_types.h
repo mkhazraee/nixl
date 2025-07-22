@@ -152,6 +152,7 @@ struct nixlQueryResp {
     bool accessible;
     nixl_b_params_t info;
 };
+
 /**
  * @brief An alias for nixlQueryResp for querying memory results
  */

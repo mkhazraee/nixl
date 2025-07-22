@@ -35,7 +35,8 @@ namespace nixl {
  * @param filename The filename to query (can be prefixed)
  * @return std::optional<nixl_b_params_t> containing file info if accessible, std::nullopt otherwise
  */
-std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename);
+std::optional<nixl_b_params_t>
+queryFileInfo(std::string_view filename);
 
 /**
  * @brief Query file information for multiple files
@@ -43,7 +44,8 @@ std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename);
  * @param resp Output response vector
  * @return NIXL_SUCCESS on success, error code otherwise
  */
-nixl_status_t queryFileInfoList(const std::vector<std::string>& filenames, std::vector<nixl_query_resp_t>& resp);
+nixl_status_t
+queryFileInfoList(const std::vector<std::string> &filenames, std::vector<nixl_query_resp_t> &resp);
 
 } // namespace nixl
 

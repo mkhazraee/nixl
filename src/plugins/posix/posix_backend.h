@@ -124,8 +124,8 @@ public:
     nixl_status_t checkXfer(nixlBackendReqH* handle) const override;
     nixl_status_t releaseReqH(nixlBackendReqH* handle) const override;
 
-    nixl_status_t queryMem(const nixl_reg_dlist_t &descs,
-                           std::vector<nixl_query_resp_t> &resp) const override;
+    nixl_status_t
+    queryMem(const nixl_reg_dlist_t &descs, std::vector<nixl_query_resp_t> &resp) const override;
 
     nixl_status_t loadLocalMD(nixlBackendMD* input, nixlBackendMD* &output) override {
         output = input;

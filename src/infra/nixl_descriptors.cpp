@@ -420,12 +420,13 @@ void nixlDescList<T>::print() const {
     }
 }
 
-template <class T>
-void nixlDescList<T>::extractMetadata(std::vector<nixl_blob_t>& metadata) const {
+template<class T>
+void
+nixlDescList<T>::extractMetadata(std::vector<nixl_blob_t> &metadata) const {
     metadata.clear();
     metadata.reserve(descs.size());
 
-    for (const auto& desc : descs) {
+    for (const auto &desc : descs) {
         if constexpr (std::is_same<nixlBlobDesc, T>::value) {
             metadata.push_back(desc.metaInfo);
         } else {

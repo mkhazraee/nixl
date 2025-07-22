@@ -24,7 +24,8 @@
 
 namespace nixl {
 
-std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename) {
+std::optional<nixl_b_params_t>
+queryFileInfo(std::string_view filename) {
     // If filename is empty, return nullopt (same as any invalid name)
     if (filename.empty()) {
         return std::nullopt;
@@ -45,16 +46,15 @@ std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename) {
     return info;
 }
 
-nixl_status_t queryFileInfoList(const std::vector<std::string>& filenames, std::vector<nixl_query_resp_t>& resp) {
+nixl_status_t
+queryFileInfoList(const std::vector<std::string> &filenames, std::vector<nixl_query_resp_t> &resp) {
     resp.clear();
     resp.reserve(filenames.size());
 
-    for (const auto& filename : filenames) {
+    for (const auto &filename : filenames) {
         auto file_info = queryFileInfo(filename);
-        resp.emplace_back(nixl_query_resp_t{
-            .accessible = file_info.has_value(),
-            .info = file_info.value_or(nixl_b_params_t{})
-        });
+        resp.emplace_back(nixl_query_resp_t{.accessible = file_info.has_value(),
+                                            .info = file_info.value_or(nixl_b_params_t{})});
     }
 
     return NIXL_SUCCESS;

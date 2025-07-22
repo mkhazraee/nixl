@@ -70,7 +70,7 @@ nixl_status_t nixlHf3fsEngine::registerMem (const nixlBlobDesc &mem,
             break;
         case FILE_SEG: {
             // Check if we already have a file descriptor for this devId
-            auto it = hf3fs_file_set.find (mem.devId);
+            auto it = hf3fs_file_set.find(mem.devId);
             if (it != hf3fs_file_set.end()) {
                 md->handle.fd = *it;
                 md->handle.size = mem.len;
@@ -84,7 +84,8 @@ nixl_status_t nixlHf3fsEngine::registerMem (const nixlBlobDesc &mem,
             status = hf3fs_utils->registerFileHandle(mem.devId, &ret);
             if (status != NIXL_SUCCESS) {
                 delete md;
-                HF3FS_LOG_RETURN(status,
+                HF3FS_LOG_RETURN(
+                    status,
                     absl::StrFormat("Error - failed to register file handle %d", mem.devId));
             }
             md->handle.fd = mem.devId;
@@ -92,7 +93,7 @@ nixl_status_t nixlHf3fsEngine::registerMem (const nixlBlobDesc &mem,
             md->handle.metadata = mem.metaInfo;
             md->type = nixl_mem;
 
-            hf3fs_file_set.insert (mem.devId);
+            hf3fs_file_set.insert(mem.devId);
             break;
         }
         case VRAM_SEG:
@@ -400,8 +401,9 @@ nixlHf3fsEngine::~nixlHf3fsEngine() {
     delete hf3fs_utils;
 }
 
-nixl_status_t nixlHf3fsEngine::queryMem(const nixl_reg_dlist_t &descs,
-                                         std::vector<nixl_query_resp_t> &resp) const {
+nixl_status_t
+nixlHf3fsEngine::queryMem(const nixl_reg_dlist_t &descs,
+                          std::vector<nixl_query_resp_t> &resp) const {
     // Extract metadata from descriptors
     std::vector<nixl_blob_t> metadata;
     descs.extractMetadata(metadata);

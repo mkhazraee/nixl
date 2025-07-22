@@ -22,7 +22,8 @@
 
 class QueryMemTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         // Create temporary test files
         test_file1 = "/tmp/test_query_mem_1.txt";
         test_file2 = "/tmp/test_query_mem_2.txt";
@@ -43,7 +44,8 @@ protected:
         }
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         // Clean up test files
         std::filesystem::remove(test_file1);
         std::filesystem::remove(test_file2);

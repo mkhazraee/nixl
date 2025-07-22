@@ -338,7 +338,8 @@ class nixlDescList {
          * @brief Extract metadata from all descriptors in the list
          * @param metadata Output vector of metadata strings
          */
-        void extractMetadata(std::vector<nixl_blob_t>& metadata) const;
+        void
+        extractMetadata(std::vector<nixl_blob_t> &metadata) const;
 };
 /**
  * @brief A typedef for a nixlDescList<nixlBasicDesc>

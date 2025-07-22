@@ -25,7 +25,8 @@
 
 class FileUtilsTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         // Create temporary test files
         test_file1 = "/tmp/nixl_test_file_1.txt";
         test_file2 = "/tmp/nixl_test_file_2.txt";
@@ -46,7 +47,8 @@ protected:
         }
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         // Clean up
         std::filesystem::remove(test_file1);
         std::filesystem::remove(test_file2);
@@ -98,9 +100,9 @@ TEST_F(FileUtilsTest, QueryFileInfoListWithMixedFiles) {
 
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].accessible);   // test_file1 exists
-    EXPECT_FALSE(resp[1].accessible);  // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].accessible);   // test_file2 exists
+    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
+    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
     EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
     EXPECT_TRUE(resp[1].info.empty()); // No info for non-existent file
     EXPECT_TRUE(resp[2].info.find("size") != resp[2].info.end());
@@ -127,7 +129,8 @@ TEST_F(FileUtilsTest, QueryFileInfoListWithEmptyFilenames) {
     EXPECT_FALSE(resp[2].accessible);
 }
 
-int main(int argc, char **argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

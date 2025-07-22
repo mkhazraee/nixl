@@ -44,12 +44,12 @@ class nixlBackendEngine {
         }
 
         [[nodiscard]] nixl_status_t getInitParam(const std::string &key, std::string &value) const {
-	    const auto iter = customParams.find(key);
+            const auto iter = customParams.find(key);
             if (iter != customParams.end()) {
                 value = iter->second;
                 return NIXL_SUCCESS;
-	    }
-	    return NIXL_ERR_INVALID_PARAM;
+            }
+            return NIXL_ERR_INVALID_PARAM;
         }
 
     public:
@@ -184,8 +184,10 @@ class nixlBackendEngine {
         // *** Needs to be implemented if supportsProgTh() is true *** //
 
         // Force backend engine worker to progress.
-        virtual int progress() { return 0; }
-
+        virtual int
+        progress() {
+            return 0;
+        }
 
         // *** Optional virtual methods that are good to be implemented in any backend *** //
 

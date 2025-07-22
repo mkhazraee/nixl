@@ -42,8 +42,7 @@ const size_t default_thread_count = std::max (1u, std::thread::hardware_concurre
 struct FileSegData {
     std::shared_ptr<gdsMtFileHandle> handle;
 
-    FileSegData(std::shared_ptr<gdsMtFileHandle> h)
-        : handle(std::move(h)) {}
+    FileSegData(std::shared_ptr<gdsMtFileHandle> h) : handle(std::move(h)) {}
 };
 
 struct MemSegData {
@@ -378,8 +377,9 @@ nixlGdsMtEngine::releaseReqH (nixlBackendReqH *handle) const {
     return NIXL_SUCCESS;
 }
 
-nixl_status_t nixlGdsMtEngine::queryMem(const nixl_reg_dlist_t &descs,
-                                         std::vector<nixl_query_resp_t> &resp) const {
+nixl_status_t
+nixlGdsMtEngine::queryMem(const nixl_reg_dlist_t &descs,
+                          std::vector<nixl_query_resp_t> &resp) const {
     // Extract metadata from descriptors
     std::vector<nixl_blob_t> metadata;
     descs.extractMetadata(metadata);

@@ -313,8 +313,9 @@ nixl_status_t nixlPosixEngine::releaseReqH(nixlBackendReqH* handle) const {
     return NIXL_ERR_BACKEND;
 }
 
-nixl_status_t nixlPosixEngine::queryMem(const nixl_reg_dlist_t &descs,
-                                         std::vector<nixl_query_resp_t> &resp) const {
+nixl_status_t
+nixlPosixEngine::queryMem(const nixl_reg_dlist_t &descs,
+                          std::vector<nixl_query_resp_t> &resp) const {
     // Extract metadata from descriptors
     std::vector<nixl_blob_t> metadata;
     descs.extractMetadata(metadata);

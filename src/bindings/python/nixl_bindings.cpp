@@ -175,14 +175,15 @@ PYBIND11_MODULE(_bindings, m) {
         .def_readwrite("accessible", &nixl_query_resp_t::accessible)
         .def_readwrite("info", &nixl_query_resp_t::info)
         .def(py::init<>())
-        .def("__repr__", [](const nixl_query_resp_t& self) {
+        .def("__repr__", [](const nixl_query_resp_t &self) {
             std::string info_str = "{";
-            for (const auto& pair : self.info) {
+            for (const auto &pair : self.info) {
                 if (!info_str.empty() && info_str != "{") info_str += ", ";
                 info_str += "'" + pair.first + "': '" + pair.second + "'";
             }
             info_str += "}";
-            return "nixlQueryResp(accessible=" + std::to_string(self.accessible) + ", info=" + info_str + ")";
+            return "nixlQueryResp(accessible=" + std::to_string(self.accessible) +
+                ", info=" + info_str + ")";
         });
 
     py::class_<nixl_xfer_dlist_t>(m, "nixlXferDList")
@@ -416,27 +417,23 @@ PYBIND11_MODULE(_bindings, m) {
                     throw_nixl_exception(ret);
                     return ret;
                 }, py::arg("descs"), py::arg("backends") = std::vector<uintptr_t>({}))
-        .def("queryMem", [](nixlAgent &agent, nixl_reg_dlist_t descs, std::vector<uintptr_t> backends) -> std::vector<nixl_query_resp_t> {
-                    std::vector<nixl_query_resp_t> resp;
-                    nixl_opt_args_t extra_params;
+        .def(
+            "queryMem",
+            [](nixlAgent &agent,
+               nixl_reg_dlist_t descs,
+               std::vector<uintptr_t> backends) -> std::vector<nixl_query_resp_t> {
+                std::vector<nixl_query_resp_t> resp;
+                nixl_opt_args_t extra_params;
 
-                    for(uintptr_t backend: backends)
-                        extra_params.backends.push_back((nixlBackendH*) backend);
+                for (uintptr_t backend : backends)
+                    extra_params.backends.push_back((nixlBackendH *)backend);
 
-                    nixl_status_t ret = agent.queryMem(descs, resp, &extra_params);
-                    throw_nixl_exception(ret);
-                    return resp;
-                }, py::arg("descs"), py::arg("backends") = std::vector<uintptr_t>({}),
-                   "Query information about memory/storage with NIXL.\n\n"
-                   "Args:\n"
-                   "    descs: Descriptor list of the buffers to be queried\n"
-                   "    backends: List of backend handles to use for querying (optional)\n\n"
-                   "Returns:\n"
-                   "    List of query responses containing accessibility and metadata information\n\n"
-                   "Raises:\n"
-                   "    nixlInvalidParamError: If parameters are invalid\n"
-                   "    nixlBackendError: If backend operation fails\n"
-                   "    nixlNotFoundError: If requested resources are not found")
+                nixl_status_t ret = agent.queryMem(descs, resp, &extra_params);
+                throw_nixl_exception(ret);
+                return resp;
+            },
+            py::arg("descs"),
+            py::arg("backends") = std::vector<uintptr_t>({}))
         .def("makeConnection", [](nixlAgent &agent,
                                   const std::string &remote_agent,
                                   std::vector<uintptr_t> backends) {
