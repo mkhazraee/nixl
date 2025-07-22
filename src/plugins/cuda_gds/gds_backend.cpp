@@ -435,6 +435,5 @@ nixlGdsEngine::queryMem(const nixl_reg_dlist_t &descs, std::vector<nixl_query_re
     for (int i = 0; i < descs.descCount(); ++i)
         metadata[i] = descs[i].metaInfo;
 
-    // Use file utils to query the files directly with metadata
     return nixl::queryFileInfoList(metadata, resp);
 }

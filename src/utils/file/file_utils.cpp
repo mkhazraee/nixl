@@ -37,7 +37,6 @@ queryFileInfo(std::string_view filename) {
         return std::nullopt;
     }
 
-    // File exists, return file information
     nixl_b_params_t info;
     info["size"] = std::to_string(stat_buf.st_size);
     info["mode"] = std::to_string(stat_buf.st_mode);

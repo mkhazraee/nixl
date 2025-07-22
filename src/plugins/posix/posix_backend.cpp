@@ -322,6 +322,5 @@ nixlPosixEngine::queryMem(const nixl_reg_dlist_t &descs,
     for (int i = 0; i < descs.descCount(); ++i)
         metadata[i] = descs[i].metaInfo;
 
-    // Use file utils to query the files directly with metadata
     return nixl::queryFileInfoList(metadata, resp);
 }

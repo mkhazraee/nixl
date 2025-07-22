@@ -1,12 +1,7 @@
 # NIXL Python API
 
-The pybind11 bindings for the public facing NIXL API are available in `src/bindings/python`. These bindings implement the headers in the `src/api/cpp` directory.
-
-The preferred way is to build it through meson-python, which will just let it be installed with pip. This can be done from the root nixl directory:
-
-```bash
-pip install .
-```
+The Python API can be found at `src/api/python/_api.py`. These are the pythonic APIs for NIXL, if more direct access to C++ style methods are desired,
+the exact header implementation of `src/api/cpp` is done through pybind11 that can be found in `src/bindings/python`.
 
 ## Python API Features
 
@@ -17,32 +12,6 @@ The Python bindings provide access to the full NIXL API including:
 - **Transfer Operations**: Create and manage data transfers
 - **QueryMem API**: Query memory/storage information and accessibility
 - **Backend Management**: Create and configure different backends (UCX, GDS, etc.)
-
-## QueryMem Example for files
-
-```python
-import nixl._bindings as nixl_bindings
-
-# Create an agent
-config = nixl_bindings.nixlAgentConfig(enable_prog_thread=False)
-agent = nixl_bindings.nixlAgent("my_agent", config)
-
-# Create descriptor list with file paths
-descs = nixl_bindings.nixlRegDList(nixl_bindings.FILE_SEG, False)
-descs.addDesc((0, 0, 0, "/path/to/file.txt"))  # File path in metaInfo
-
-# Query memory/storage information
-resp = agent.queryMem(descs)
-
-# Check results
-for i, result in enumerate(resp):
-    print(f"File {i}: accessible={result.accessible}")
-    if result.accessible:
-        print(f"  Size: {result.info.get('size')} bytes")
-        print(f"  Mode: {result.info.get('mode')}")
-```
-
-For more examples, see [examples/python/](../examples/python/).
 
 ## Installation
 

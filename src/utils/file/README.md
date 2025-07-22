@@ -1,32 +1,23 @@
 # File Utils and QueryMem API Implementation
 
-This directory contains the implementation of file utilities for NIXL file backends and the QueryMem API.
+This directory contains the implementation of file utilities for NIXL file backends, such as using stat to check for file existence used for the QueryMem API.
 
 ## Overview
 
-The implementation provides:
+The implementation provides utility functions for generic file operations, such as file query, implementented in `file_utils.h` and `file_utils.cpp`.
+The goal is to eliminate the need for intermediate layers, such as `file_query_helper`, and hence provide better separation of concerns.
 
-1. **QueryMem API**: Implementation of the QueryMem API for file backends that uses `nixl_reg_dlist_t` with filenames in `metaInfo` and uses `stat` to check file existence.
+## QueryMem API Implementation through queryFileInfoList
 
-2. **File Utils (`file_utils.h` and `file_utils.cpp`)**: Utility functions for file operations including file query functions.
-
-## QueryMem API Implementation
-
-The QueryMem API has been implemented for all file backends:
+The QueryMem API has been implemented for these file backends:
 
 - **POSIX Backend** (`src/plugins/posix/`)
 - **HF3FS Backend** (`src/plugins/hf3fs/`)
 - **GDS MT Backend** (`src/plugins/gds_mt/`)
 - **CUDA GDS Backend** (`src/plugins/cuda_gds/`)
 
-### How it works:
-
-1. **Input**: Takes a `nixl_reg_dlist_t` containing file descriptors with filenames in the `metaInfo` field
-2. **Processing**:
-   - Extracts filenames from descriptors (can be customized per plugin)
-   - Calls `queryFileInfoList()` to check file existence using `stat`
-   - Strips any prefixes (RO:, RW:, WR:) before checking file existence
-3. **Output**: Returns a vector of `nixl_query_resp_t` structures containing:
+The backend extracts the filenames from the input descriptors (`nixl_reg_dlist_t`) and passes them to queryFileInfoList.
+Then queryFileInfoList returns a vector of `nixl_query_resp_t` structures containing:
    - `accessible`: Boolean indicating if file exists
    - `info`: Additional file information (size, mode, mtime) if file exists
 
@@ -69,20 +60,9 @@ for (const auto& result : resp) {
   - `resp`: Output response vector
 - **Returns**: NIXL_SUCCESS on success, error code otherwise
 
-## Architecture
-
-The current architecture separates concerns:
-
-1. **File Operations**: The `file_utils` provides generic file query functions (`queryFileInfo`, `queryFileInfoList`)
-2. **Plugin Integration**: Each plugin parses the metaInfo in descriptors to get files name for `queryFileInfoList()` without intermediate layers
-3. **File Descriptor Management**: Plugins currently use `devId` directly as file descriptor
-
-This approach eliminates the need for the `file_query_helper` layer and provides better separation of concerns.
-
 ## Building
 
 The file utils are built as a shared library (`libfile_utils.so`) and linked with all file backends. The build system has been updated to include the file utils dependency in all relevant backend meson.build files.
-
 
 
 ## Testing
