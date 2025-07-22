@@ -94,9 +94,9 @@ TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
     nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].accessible);   // test_file1 exists
-    EXPECT_FALSE(resp[1].accessible);  // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].accessible);   // test_file2 exists
+    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
+    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
 }
 
 TEST_F(QueryMemTest, QueryFileInfoListWithEmptyVector) {
