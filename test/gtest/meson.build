@@ -60,7 +60,8 @@ gtest_sources = [
     'error_handling.cpp',
     'test_transfer.cpp',
     'metadata_exchange.cpp',
-    'common.cpp'
+    'common.cpp',
+    'unit/query_mem.cpp'
     ]
 test_exe = executable('gtest',
     sources : gtest_sources,
