@@ -22,29 +22,27 @@
 #include <cstring>
 #include <iostream>
 
-nixl_status_t queryFileInfo(const std::string& filename, nixl_query_resp_t& resp) {
-    // Initialize response
-    resp.accessible = false;
-    resp.info.clear();
+namespace nixl {
 
+std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename) {
+    // If filename is empty, return nullopt (same as any invalid name)
     if (filename.empty()) {
-        return NIXL_ERR_INVALID_PARAM;
+        return std::nullopt;
     }
 
     // Check if file exists using stat
     struct stat stat_buf;
-    bool file_exists = (stat(filename.c_str(), &stat_buf) == 0);
-
-    resp.accessible = file_exists;
-
-    // Add additional file information if file exists
-    if (file_exists) {
-        resp.info["size"] = std::to_string(stat_buf.st_size);
-        resp.info["mode"] = std::to_string(stat_buf.st_mode);
-        resp.info["mtime"] = std::to_string(stat_buf.st_mtime);
+    if (stat(std::string(filename).c_str(), &stat_buf) != 0) {
+        return std::nullopt;
     }
 
-    return NIXL_SUCCESS;
+    // File exists, return file information
+    nixl_b_params_t info;
+    info["size"] = std::to_string(stat_buf.st_size);
+    info["mode"] = std::to_string(stat_buf.st_mode);
+    info["mtime"] = std::to_string(stat_buf.st_mtime);
+
+    return info;
 }
 
 nixl_status_t queryFileInfoList(const std::vector<std::string>& filenames, std::vector<nixl_query_resp_t>& resp) {
@@ -52,17 +50,14 @@ nixl_status_t queryFileInfoList(const std::vector<std::string>& filenames, std::
     resp.reserve(filenames.size());
 
     for (const auto& filename : filenames) {
-        nixl_query_resp_t query_resp;
-        nixl_status_t status = queryFileInfo(filename, query_resp);
-
-        if (status != NIXL_SUCCESS) {
-            // If one file fails, mark it as inaccessible but continue
-            query_resp.accessible = false;
-            query_resp.info.clear();
-        }
-
-        resp.push_back(query_resp);
+        auto file_info = queryFileInfo(filename);
+        resp.emplace_back(nixl_query_resp_t{
+            .accessible = file_info.has_value(),
+            .info = file_info.value_or(nixl_b_params_t{})
+        });
     }
 
     return NIXL_SUCCESS;
 }
+
+} // namespace nixl

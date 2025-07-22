@@ -18,7 +18,9 @@
 #define __FILE_UTILS_H
 
 #include <string>
+#include <string_view>
 #include <vector>
+#include <optional>
 #include <sys/stat.h>
 #include "nixl_types.h"
 
@@ -26,13 +28,14 @@
  * @brief File utilities for NIXL file backends
  */
 
+namespace nixl {
+
 /**
  * @brief Query file information for a single file
  * @param filename The filename to query (can be prefixed)
- * @param resp Output response structure
- * @return NIXL_SUCCESS on success, error code otherwise
+ * @return std::optional<nixl_b_params_t> containing file info if accessible, std::nullopt otherwise
  */
-nixl_status_t queryFileInfo(const std::string& filename, nixl_query_resp_t& resp);
+std::optional<nixl_b_params_t> queryFileInfo(std::string_view filename);
 
 /**
  * @brief Query file information for multiple files
@@ -41,5 +44,7 @@ nixl_status_t queryFileInfo(const std::string& filename, nixl_query_resp_t& resp
  * @return NIXL_SUCCESS on success, error code otherwise
  */
 nixl_status_t queryFileInfoList(const std::vector<std::string>& filenames, std::vector<nixl_query_resp_t>& resp);
+
+} // namespace nixl
 
 #endif // __FILE_UTILS_H

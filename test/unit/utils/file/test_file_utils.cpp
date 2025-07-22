@@ -17,133 +17,117 @@
 
 #include <iostream>
 #include <fstream>
-#include <cassert>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <filesystem>
+#include <gtest/gtest.h>
 #include "utils/file/file_utils.h"
 
-int main() {
-    // Create temporary test files
-    std::string test_file1 = "/tmp/nixl_test_file_1.txt";
-    std::string test_file2 = "/tmp/nixl_test_file_2.txt";
-    std::string non_existent_file = "/tmp/nixl_test_nonexistent_file.txt";
+class FileUtilsTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Create temporary test files
+        test_file1 = "/tmp/nixl_test_file_1.txt";
+        test_file2 = "/tmp/nixl_test_file_2.txt";
+        non_existent_file = "/tmp/nixl_test_nonexistent_file.txt";
 
-    // Create test file 1
-    {
-        std::ofstream test_file(test_file1);
-        test_file << "Test content for file 1" << std::endl;
-        test_file.close();
+        // Create test file 1
+        {
+            std::ofstream test_file(test_file1);
+            test_file << "Test content for file 1" << std::endl;
+            test_file.close();
+        }
+
+        // Create test file 2
+        {
+            std::ofstream test_file(test_file2);
+            test_file << "Test content for file 2" << std::endl;
+            test_file.close();
+        }
     }
 
-    // Create test file 2
-    {
-        std::ofstream test_file(test_file2);
-        test_file << "Test content for file 2" << std::endl;
-        test_file.close();
+    void TearDown() override {
+        // Clean up
+        std::filesystem::remove(test_file1);
+        std::filesystem::remove(test_file2);
     }
 
-    // Test 1: queryFileInfo with existing file
-    {
-        nixl_query_resp_t resp;
-        nixl_status_t status = queryFileInfo(test_file1, resp);
+    std::string test_file1;
+    std::string test_file2;
+    std::string non_existent_file;
+};
 
-        assert(status == NIXL_SUCCESS);
-        assert(resp.accessible == true);
-        assert(resp.info.find("size") != resp.info.end());
-        assert(resp.info.find("mode") != resp.info.end());
-        assert(resp.info.find("mtime") != resp.info.end());
+TEST_F(FileUtilsTest, QueryFileInfoWithExistingFile) {
+    auto result = nixl::queryFileInfo(test_file1);
 
-        std::cout << "✓ queryFileInfo with existing file test passed" << std::endl;
-    }
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->find("size") != result->end());
+    EXPECT_TRUE(result->find("mode") != result->end());
+    EXPECT_TRUE(result->find("mtime") != result->end());
+}
 
-    // Test 2: queryFileInfo with non-existent file
-    {
-        nixl_query_resp_t resp;
-        nixl_status_t status = queryFileInfo(non_existent_file, resp);
+TEST_F(FileUtilsTest, QueryFileInfoWithNonExistentFile) {
+    auto result = nixl::queryFileInfo(non_existent_file);
 
-        assert(status == NIXL_SUCCESS);
-        assert(resp.accessible == false);
-        assert(resp.info.empty());
+    EXPECT_FALSE(result.has_value());
+}
 
-        std::cout << "✓ queryFileInfo with non-existent file test passed" << std::endl;
-    }
+TEST_F(FileUtilsTest, QueryFileInfoWithEmptyFilename) {
+    auto result = nixl::queryFileInfo("");
 
-    // Test 3: queryFileInfo with empty filename
-    {
-        nixl_query_resp_t resp;
-        nixl_status_t status = queryFileInfo("", resp);
+    EXPECT_FALSE(result.has_value());
+}
 
-        assert(status == NIXL_ERR_INVALID_PARAM);
+TEST_F(FileUtilsTest, QueryFileInfoListWithMultipleExistingFiles) {
+    std::vector<std::string> filenames = {test_file1, test_file2};
+    std::vector<nixl_query_resp_t> resp;
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
 
-        std::cout << "✓ queryFileInfo with empty filename test passed" << std::endl;
-    }
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 2);
+    EXPECT_TRUE(resp[0].accessible);
+    EXPECT_TRUE(resp[1].accessible);
+    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
+    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+}
 
-    // Test 4: queryFileInfoList with multiple existing files
-    {
-        std::vector<std::string> filenames = {test_file1, test_file2};
-        std::vector<nixl_query_resp_t> resp;
-        nixl_status_t status = queryFileInfoList(filenames, resp);
+TEST_F(FileUtilsTest, QueryFileInfoListWithMixedFiles) {
+    std::vector<std::string> filenames = {test_file1, non_existent_file, test_file2};
+    std::vector<nixl_query_resp_t> resp;
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
 
-        assert(status == NIXL_SUCCESS);
-        assert(resp.size() == 2);
-        assert(resp[0].accessible == true);
-        assert(resp[1].accessible == true);
-        assert(resp[0].info.find("size") != resp[0].info.end());
-        assert(resp[1].info.find("size") != resp[1].info.end());
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 3);
+    EXPECT_TRUE(resp[0].accessible);   // test_file1 exists
+    EXPECT_FALSE(resp[1].accessible);  // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].accessible);   // test_file2 exists
+    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
+    EXPECT_TRUE(resp[1].info.empty()); // No info for non-existent file
+    EXPECT_TRUE(resp[2].info.find("size") != resp[2].info.end());
+}
 
-        std::cout << "✓ queryFileInfoList with existing files test passed" << std::endl;
-    }
+TEST_F(FileUtilsTest, QueryFileInfoListWithEmptyVector) {
+    std::vector<std::string> filenames;
+    std::vector<nixl_query_resp_t> resp;
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
 
-    // Test 5: queryFileInfoList with mixed existing and non-existent files
-    {
-        std::vector<std::string> filenames = {test_file1, non_existent_file, test_file2};
-        std::vector<nixl_query_resp_t> resp;
-        nixl_status_t status = queryFileInfoList(filenames, resp);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_TRUE(resp.empty());
+}
 
-        assert(status == NIXL_SUCCESS);
-        assert(resp.size() == 3);
-        assert(resp[0].accessible == true);   // test_file1 exists
-        assert(resp[1].accessible == false);  // non_existent_file doesn't exist
-        assert(resp[2].accessible == true);   // test_file2 exists
-        assert(resp[0].info.find("size") != resp[0].info.end());
-        assert(resp[1].info.empty());         // No info for non-existent file
-        assert(resp[2].info.find("size") != resp[2].info.end());
+TEST_F(FileUtilsTest, QueryFileInfoListWithEmptyFilenames) {
+    std::vector<std::string> filenames = {"", "", ""};
+    std::vector<nixl_query_resp_t> resp;
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
 
-        std::cout << "✓ queryFileInfoList with mixed files test passed" << std::endl;
-    }
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 3);
+    EXPECT_FALSE(resp[0].accessible);
+    EXPECT_FALSE(resp[1].accessible);
+    EXPECT_FALSE(resp[2].accessible);
+}
 
-    // Test 6: queryFileInfoList with empty vector
-    {
-        std::vector<std::string> filenames;
-        std::vector<nixl_query_resp_t> resp;
-        nixl_status_t status = queryFileInfoList(filenames, resp);
-
-        assert(status == NIXL_SUCCESS);
-        assert(resp.empty());
-
-        std::cout << "✓ queryFileInfoList with empty vector test passed" << std::endl;
-    }
-
-    // Test 7: queryFileInfoList with empty filenames
-    {
-        std::vector<std::string> filenames = {"", "", ""};
-        std::vector<nixl_query_resp_t> resp;
-        nixl_status_t status = queryFileInfoList(filenames, resp);
-
-        assert(status == NIXL_SUCCESS);
-        assert(resp.size() == 3);
-        assert(resp[0].accessible == false);
-        assert(resp[1].accessible == false);
-        assert(resp[2].accessible == false);
-
-        std::cout << "✓ queryFileInfoList with empty filenames test passed" << std::endl;
-    }
-
-    // Clean up
-    std::filesystem::remove(test_file1);
-    std::filesystem::remove(test_file2);
-
-    std::cout << "All file utils tests passed!" << std::endl;
-    return 0;
+int main(int argc, char **argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

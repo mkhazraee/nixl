@@ -407,5 +407,5 @@ nixl_status_t nixlHf3fsEngine::queryMem(const nixl_reg_dlist_t &descs,
     descs.extractMetadata(metadata);
 
     // Use file utils to query the files directly with metadata
-    return queryFileInfoList(metadata, resp);
+    return nixl::queryFileInfoList(metadata, resp);
 }

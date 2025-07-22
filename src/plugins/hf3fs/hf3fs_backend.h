@@ -153,6 +153,6 @@ class nixlHf3fsEngine : public nixlBackendEngine {
         nixl_status_t releaseReqH(nixlBackendReqH* handle) const;
 
         nixl_status_t queryMem(const nixl_reg_dlist_t &descs,
-                           std::vector<nixl_query_resp_t> &resp) const override;
+                               std::vector<nixl_query_resp_t> &resp) const override;
 };
 #endif

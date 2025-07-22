@@ -18,7 +18,8 @@ test_file_utils = executable('test_file_utils',
     include_directories: [include_directories('../../../../src'), nixl_inc_dirs],
     dependencies: [
         file_utils_interface,
-        nixl_common_dep
+        nixl_common_dep,
+        gtest_dep
     ],
     install: false
 )
