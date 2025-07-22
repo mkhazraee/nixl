@@ -129,7 +129,7 @@ TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
     nixlAgent agent("test_agent", cfg);
 
     // Create backend
-    nixlBackendH* backend_handle = nullptr;
+    nixlBackendH *backend_handle = nullptr;
     nixl_b_params_t params;
     auto status = agent.createBackend("POSIX", params, backend_handle);
     ASSERT_EQ(status, NIXL_SUCCESS);
@@ -160,7 +160,7 @@ TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
     nixlAgent agent("test_agent", cfg);
 
     // Create backend
-    nixlBackendH* backend_handle = nullptr;
+    nixlBackendH *backend_handle = nullptr;
     nixl_b_params_t params;
     auto status = agent.createBackend("POSIX", params, backend_handle);
     ASSERT_EQ(status, NIXL_SUCCESS);
@@ -191,7 +191,7 @@ TEST_F(QueryMemTest, QueryMemWithEmptyDescriptors) {
     nixlAgent agent("test_agent", cfg);
 
     // Create backend
-    nixlBackendH* backend_handle = nullptr;
+    nixlBackendH *backend_handle = nullptr;
     nixl_b_params_t params;
     auto status = agent.createBackend("POSIX", params, backend_handle);
     ASSERT_EQ(status, NIXL_SUCCESS);
@@ -216,7 +216,7 @@ TEST_F(QueryMemTest, QueryMemWithEmptyFilenames) {
     nixlAgent agent("test_agent", cfg);
 
     // Create backend
-    nixlBackendH* backend_handle = nullptr;
+    nixlBackendH *backend_handle = nullptr;
     nixl_b_params_t params;
     auto status = agent.createBackend("POSIX", params, backend_handle);
     ASSERT_EQ(status, NIXL_SUCCESS);
