@@ -316,9 +316,11 @@ nixl_status_t nixlPosixEngine::releaseReqH(nixlBackendReqH* handle) const {
 nixl_status_t
 nixlPosixEngine::queryMem(const nixl_reg_dlist_t &descs,
                           std::vector<nixl_query_resp_t> &resp) const {
-    // Extract metadata from descriptors
-    std::vector<nixl_blob_t> metadata;
-    descs.extractMetadata(metadata);
+    // Extract metadata from descriptors which are file names
+    // Different plugins might customize parsing of metaInfo to get the file names
+    std::vector<nixl_blob_t> metadata(descs.descCount());
+    for (int i = 0; i < descs.descCount(); ++i)
+        metadata[i] = descs[i].metaInfo;
 
     // Use file utils to query the files directly with metadata
     return nixl::queryFileInfoList(metadata, resp);

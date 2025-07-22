@@ -23,7 +23,7 @@ The QueryMem API has been implemented for all file backends:
 
 1. **Input**: Takes a `nixl_reg_dlist_t` containing file descriptors with filenames in the `metaInfo` field
 2. **Processing**:
-   - Uses `extractMetadata()` method from `nixlDescList` class to extract filenames from descriptors
+   - Extracts filenames from descriptors (can be customized per plugin)
    - Calls `queryFileInfoList()` to check file existence using `stat`
    - Strips any prefixes (RO:, RW:, WR:) before checking file existence
 3. **Output**: Returns a vector of `nixl_query_resp_t` structures containing:
@@ -73,10 +73,9 @@ for (const auto& result : resp) {
 
 The current architecture separates concerns:
 
-1. **Descriptor Operations**: The `nixlDescList` class provides `extractMetadata()` method to extract metadata from descriptors
-2. **File Operations**: The `file_utils` provides generic file query functions (`queryFileInfo`, `queryFileInfoList`)
-3. **Plugin Integration**: Each plugin directly uses `extractMetadata()` and `queryFileInfoList()` without intermediate layers
-4. **File Descriptor Management**: Plugins currently use `devId` directly as file descriptor
+1. **File Operations**: The `file_utils` provides generic file query functions (`queryFileInfo`, `queryFileInfoList`)
+2. **Plugin Integration**: Each plugin parses the metaInfo in descriptors to get files name for `queryFileInfoList()` without intermediate layers
+3. **File Descriptor Management**: Plugins currently use `devId` directly as file descriptor
 
 This approach eliminates the need for the `file_query_helper` layer and provides better separation of concerns.
 
