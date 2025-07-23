@@ -65,6 +65,19 @@ std::string nixlEnumStrings::statusStr (const nixl_status_t &status) {
     }
 }
 
+/*** nixlXferReqH telemetry update method, used mainly in the nixlAgent ***/
+void
+nixlXferReqH::updateRequestStats(const std::string &dbg_msg_type) {
+    const auto xfer_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now() - telemetry.startTime);
+    // If endTime needs to be recorded per Xfer, now() value here can be returned
+
+    // To be replaced with NIXL_DEBUG when full telemetry is added
+    std::cout << "[NIXL TELEMETRY]: From backend " << engine->getType() << " " << dbg_msg_type
+              << " Xfer with " << initiatorDescs->descCount() << " descriptors of total size "
+              << telemetry.totalBytes << "B in " << xfer_time.count() << "us." << std::endl;
+}
+
 /*** nixlAgentData constructor/destructor, as part of nixlAgent's ***/
 nixlAgentData::nixlAgentData(const std::string &name,
                              const nixlAgentConfig &cfg) :
@@ -838,19 +851,6 @@ nixlAgent::estimateXferCost(const nixlXferReqH *req_hndl,
                                               extra_params);
 }
 
-inline void
-telemetryPrint(const std::string &msg_type, nixlXferReqH *req_hndl) {
-
-    const auto xfer_time = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::high_resolution_clock::now() - req_hndl->telemetry.startTime);
-    // If endTime needs to be recorded per Xfer, now() value here can be returned
-
-    NIXL_DEBUG << "[NIXL TELEMETRY]: From backend " << req_hndl->engine->getType() << " "
-               << msg_type << " Xfer with " << req_hndl->initiatorDescs->descCount()
-               << " descriptors of total size " << req_hndl->telemetry.totalBytes << "B in "
-               << xfer_time.count() << "us." << std::endl;
-}
-
 nixl_status_t
 nixlAgent::postXferReq(nixlXferReqH *req_hndl,
                        const nixl_opt_args_t* extra_params) const {
@@ -919,9 +919,9 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
 
     if (data->telemetryEnabled) {
         if (req_hndl->status == NIXL_SUCCESS)
-            telemetryPrint("Posted and Completed", req_hndl);
+            req_hndl->updateRequestStats("Posted and Completed");
         else if (req_hndl->status == NIXL_IN_PROG)
-            telemetryPrint("Posted", req_hndl);
+            req_hndl->updateRequestStats("Posted");
         // Errors should show up in debug log separately, not adding a print here
     }
 
@@ -944,7 +944,7 @@ nixlAgent::getXferStatus (nixlXferReqH *req_hndl) const {
     }
 
     if (data->telemetryEnabled && req_hndl->status == NIXL_SUCCESS)
-        telemetryPrint("Completed", req_hndl);
+        req_hndl->updateRequestStats("Completed");
 
     return req_hndl->status;
 }

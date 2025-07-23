@@ -53,9 +53,10 @@ class nixlXferReqH {
                 engine->releaseReqH(backendHandle);
         }
 
-    friend class nixlAgent;
-    friend void
-    telemetryPrint(const std::string &msg_type, nixlXferReqH *req_hndl);
+        void
+        updateRequestStats(const std::string &dbg_msg_type);
+
+        friend class nixlAgent;
 };
 
 class nixlDlistH {
