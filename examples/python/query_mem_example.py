@@ -101,11 +101,10 @@ if __name__ == "__main__":
 
         for i, result in enumerate(resp):
             print(f"Descriptor {i}:")
-            print(f"  Accessible: {result.accessible}")
-            if result.accessible:
-                print(f"  File size: {result.info.get('size', 'N/A')} bytes")
-                print(f"  File mode: {result.info.get('mode', 'N/A')}")
-                print(f"  Modified time: {result.info.get('mtime', 'N/A')}")
+            if result is not None:
+                print(f"  File size: {result.get('size', 'N/A')} bytes")
+                print(f"  File mode: {result.get('mode', 'N/A')}")
+                print(f"  Modified time: {result.get('mtime', 'N/A')}")
             else:
                 print("  File does not exist or is not accessible")
             print()

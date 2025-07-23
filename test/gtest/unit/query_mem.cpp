@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <filesystem>
+#include <optional>
 #include "file/file_utils.h"
 #include "nixl.h"
 #include "nixl_descriptors.h"
@@ -83,10 +84,10 @@ TEST_F(QueryMemTest, QueryFileInfoListWithMultipleExistingFiles) {
     nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].accessible);
-    EXPECT_TRUE(resp[1].accessible);
-    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
-    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+    EXPECT_TRUE(resp[0].has_value());
+    EXPECT_TRUE(resp[1].has_value());
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
 }
 
 TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
@@ -96,9 +97,9 @@ TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
     nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
-    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
+    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
+    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
 }
 
 TEST_F(QueryMemTest, QueryFileInfoListWithEmptyVector) {
@@ -117,9 +118,9 @@ TEST_F(QueryMemTest, QueryFileInfoListWithEmptyFilenames) {
     nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_FALSE(resp[0].accessible);
-    EXPECT_FALSE(resp[1].accessible);
-    EXPECT_FALSE(resp[2].accessible);
+    EXPECT_FALSE(resp[0].has_value());
+    EXPECT_FALSE(resp[1].has_value());
+    EXPECT_FALSE(resp[2].has_value());
 }
 
 // Tests using the queryMem API directly
@@ -148,10 +149,10 @@ TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
     status = agent.queryMem(descs, resp, &extra_params);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].accessible);
-    EXPECT_TRUE(resp[1].accessible);
-    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
-    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+    EXPECT_TRUE(resp[0].has_value());
+    EXPECT_TRUE(resp[1].has_value());
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
 }
 
 TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
@@ -180,9 +181,9 @@ TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
     status = agent.queryMem(descs, resp, &extra_params);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
-    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
+    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
+    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
 }
 
 TEST_F(QueryMemTest, QueryMemWithEmptyDescriptors) {
@@ -235,8 +236,8 @@ TEST_F(QueryMemTest, QueryMemWithEmptyFilenames) {
     status = agent.queryMem(descs, resp, &extra_params);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 2);
-    EXPECT_FALSE(resp[0].accessible);
-    EXPECT_FALSE(resp[1].accessible);
+    EXPECT_FALSE(resp[0].has_value());
+    EXPECT_FALSE(resp[1].has_value());
 }
 
 TEST_F(QueryMemTest, QueryMemDirectTest) {
@@ -259,8 +260,8 @@ TEST_F(QueryMemTest, QueryMemDirectTest) {
     nixl_status_t status = nixl::queryFileInfoList(metadata, resp);
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].accessible);
-    EXPECT_TRUE(resp[1].accessible);
-    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
-    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+    EXPECT_TRUE(resp[0].has_value());
+    EXPECT_TRUE(resp[1].has_value());
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
 }

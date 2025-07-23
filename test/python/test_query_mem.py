@@ -69,14 +69,14 @@ class TestQueryMem(unittest.TestCase):
                 # Verify results
                 self.assertEqual(len(resp), 2)
 
-                # First file should be accessible
-                self.assertTrue(resp[0].accessible)
-                self.assertIn("size", resp[0].info)
-                self.assertIn("mode", resp[0].info)
+                # First file should be accessible (returns dict with info)
+                self.assertIsNotNone(resp[0])
+                self.assertIsInstance(resp[0], dict)
+                self.assertIn("size", resp[0])
+                self.assertIn("mode", resp[0])
 
-                # Second file should not be accessible
-                self.assertFalse(resp[1].accessible)
-                self.assertEqual(len(resp[1].info), 0)
+                # Second file should not be accessible (returns None)
+                self.assertIsNone(resp[1])
 
             except Exception as e:
                 # Some backends might not support queryMem, which is okay
@@ -113,7 +113,8 @@ class TestQueryMem(unittest.TestCase):
 
                 # Verify results
                 self.assertEqual(len(resp), 1)
-                self.assertTrue(resp[0].accessible)
+                self.assertIsNotNone(resp[0])
+                self.assertIsInstance(resp[0], dict)
 
             except Exception as e:
                 # Some backends might not support queryMem, which is okay
@@ -153,20 +154,6 @@ class TestQueryMem(unittest.TestCase):
                 )
         except Exception as e:
             print(f"Backend creation failed: {e}")
-
-    def test_query_resp_repr(self):
-        """Test nixlQueryResp __repr__ method"""
-        resp = nixl_bindings.nixlQueryResp()
-        resp.accessible = True
-        # Note: info field is not working properly in Python bindings
-        # resp.info["size"] = "1024"
-        # resp.info["mode"] = "644"
-
-        repr_str = repr(resp)
-        self.assertIn("accessible=1", repr_str)
-        # Skip info field test since it's not working properly
-        # self.assertIn("'size': '1024'", repr_str)
-        # self.assertIn("'mode': '644'", repr_str)
 
 
 if __name__ == "__main__":

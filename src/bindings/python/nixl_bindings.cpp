@@ -171,21 +171,6 @@ PYBIND11_MODULE(_bindings, m) {
     py::register_exception<nixlUnknownError>(m, "nixlUnknownError");
     py::register_exception<nixlNotSupportedError>(m, "nixlNotSupportedError");
 
-    py::class_<nixl_query_resp_t>(m, "nixlQueryResp")
-        .def_readwrite("accessible", &nixl_query_resp_t::accessible)
-        .def_readwrite("info", &nixl_query_resp_t::info)
-        .def(py::init<>())
-        .def("__repr__", [](const nixl_query_resp_t &self) {
-            std::string info_str = "{";
-            for (const auto &pair : self.info) {
-                if (!info_str.empty() && info_str != "{") info_str += ", ";
-                info_str += "'" + pair.first + "': '" + pair.second + "'";
-            }
-            info_str += "}";
-            return "nixlQueryResp(accessible=" + std::to_string(self.accessible) +
-                ", info=" + info_str + ")";
-        });
-
     py::class_<nixl_xfer_dlist_t>(m, "nixlXferDList")
         .def(py::init<nixl_mem_t, bool, int>(),
              py::arg("type"),

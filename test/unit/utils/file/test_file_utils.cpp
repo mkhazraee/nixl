@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <filesystem>
+#include <optional>
 #include <gtest/gtest.h>
 #include "utils/file/file_utils.h"
 
@@ -87,10 +88,10 @@ TEST_F(FileUtilsTest, QueryFileInfoListWithMultipleExistingFiles) {
 
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].accessible);
-    EXPECT_TRUE(resp[1].accessible);
-    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
-    EXPECT_TRUE(resp[1].info.find("size") != resp[1].info.end());
+    EXPECT_TRUE(resp[0].has_value());
+    EXPECT_TRUE(resp[1].has_value());
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
 }
 
 TEST_F(FileUtilsTest, QueryFileInfoListWithMixedFiles) {
@@ -100,12 +101,12 @@ TEST_F(FileUtilsTest, QueryFileInfoListWithMixedFiles) {
 
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].accessible); // test_file1 exists
-    EXPECT_FALSE(resp[1].accessible); // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].accessible); // test_file2 exists
-    EXPECT_TRUE(resp[0].info.find("size") != resp[0].info.end());
-    EXPECT_TRUE(resp[1].info.empty()); // No info for non-existent file
-    EXPECT_TRUE(resp[2].info.find("size") != resp[2].info.end());
+    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
+    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    // resp[1] is nullopt, so no info to check
+    EXPECT_TRUE(resp[2].value().find("size") != resp[2].value().end());
 }
 
 TEST_F(FileUtilsTest, QueryFileInfoListWithEmptyVector) {
@@ -124,9 +125,9 @@ TEST_F(FileUtilsTest, QueryFileInfoListWithEmptyFilenames) {
 
     EXPECT_EQ(status, NIXL_SUCCESS);
     EXPECT_EQ(resp.size(), 3);
-    EXPECT_FALSE(resp[0].accessible);
-    EXPECT_FALSE(resp[1].accessible);
-    EXPECT_FALSE(resp[2].accessible);
+    EXPECT_FALSE(resp[0].has_value());
+    EXPECT_FALSE(resp[1].has_value());
+    EXPECT_FALSE(resp[2].has_value());
 }
 
 int

@@ -52,8 +52,7 @@ queryFileInfoList(const std::vector<std::string> &filenames, std::vector<nixl_qu
 
     for (const auto &filename : filenames) {
         auto file_info = queryFileInfo(filename);
-        resp.emplace_back(nixl_query_resp_t{.accessible = file_info.has_value(),
-                                            .info = file_info.value_or(nixl_b_params_t{})});
+        resp.emplace_back(file_info);
     }
 
     return NIXL_SUCCESS;
