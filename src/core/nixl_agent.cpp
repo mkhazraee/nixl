@@ -86,9 +86,9 @@ nixlAgentData::nixlAgentData(const std::string &name,
 
     const char *telemetry = std::getenv("NIXL_TELEMETRY_ENABLE");
     if (telemetry != nullptr) {
-        if ((!strcmp(telemetry, "y")) || (!strcmp(telemetry, "Y")))
+        if (!strcasecmp(telemetry, "y"))
             telemetryEnabled = true;
-        else if ((!strcmp(telemetry, "n")) || (!strcmp(telemetry, "N")))
+        else if (!strcasecmp(telemetry, "n"))
             telemetryEnabled = false;
         else
             NIXL_WARN
@@ -569,7 +569,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     nixl_meta_dlist_t* local_descs  = local_side->descs.at(backend);
     nixl_meta_dlist_t* remote_descs = remote_side->descs.at(backend);
-    uint64_t totalBytes = 0;
+    size_t totalBytes = 0;
 
     if ((desc_count == 0) || (remote_indices.size() == 0) ||
         (desc_count != (int) remote_indices.size()))
@@ -585,8 +585,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         if ((*local_descs )[local_indices [i]].len !=
             (*remote_descs)[remote_indices[i]].len)
             return NIXL_ERR_INVALID_PARAM;
-        else
-            totalBytes += (*local_descs)[local_indices[i]].len;
+        totalBytes += (*local_descs)[local_indices[i]].len;
     }
 
     if (extra_params && extra_params->hasNotif) {
@@ -660,7 +659,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
     handle->hasNotif = opt_args.hasNotif;
     handle->backendOp = operation;
     handle->status = NIXL_ERR_NOT_POSTED;
-    handle->totalBytes = totalBytes;
+    handle->telemetry.totalBytes = totalBytes;
 
     ret = handle->engine->prepXfer (handle->backendOp,
                                     *handle->initiatorDescs,
@@ -698,14 +697,14 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     }
 
     // Check the correspondence between descriptor lists
-    uint64_t totalBytes = 0;
+    size_t totalBytes = 0;
     if (local_descs.descCount() != remote_descs.descCount())
         return NIXL_ERR_INVALID_PARAM;
-    for (int i=0; i<local_descs.descCount(); ++i)
+    for (int i = 0; i < local_descs.descCount(); ++i) {
         if (local_descs[i].len != remote_descs[i].len)
             return NIXL_ERR_INVALID_PARAM;
-        else
-            totalBytes += local_descs[i].len;
+        totalBytes += local_descs[i].len;
+    }
 
     if (!extra_params || extra_params->backends.size() == 0) {
         // Finding backends that support the corresponding memories
@@ -789,7 +788,7 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     handle->status = NIXL_ERR_NOT_POSTED;
     handle->notifMsg = opt_args.notifMsg;
     handle->hasNotif = opt_args.hasNotif;
-    handle->totalBytes = totalBytes;
+    handle->telemetry.totalBytes = totalBytes;
 
     ret1 = handle->engine->prepXfer (handle->backendOp,
                                      *handle->initiatorDescs,
@@ -839,23 +838,18 @@ nixlAgent::estimateXferCost(const nixlXferReqH *req_hndl,
                                               extra_params);
 }
 
-namespace {
 inline void
-telemetryPrint(const std::string msg_type,
-               const uint64_t descs,
-               const uint64_t bytes,
-               const chrono_point_t start_time) {
+telemetryPrint(const std::string &msg_type, nixlXferReqH *req_hndl) {
 
     const auto xfer_time = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::high_resolution_clock::now() - start_time);
+        std::chrono::high_resolution_clock::now() - req_hndl->telemetry.startTime);
     // If endTime needs to be recorded per Xfer, now() value here can be returned
 
-    // Can become NIXL_DEBUG if we add another method to output the telemetry data
-    std::cout << "[NIXL TELEMETRY]: " << msg_type << " Xfer with " << descs
-              << " descriptors of total size " << bytes << "B in " << xfer_time.count() << "us."
-              << std::endl;
+    NIXL_DEBUG << "[NIXL TELEMETRY]: From backend " << req_hndl->engine->getType() << " "
+               << msg_type << " Xfer with " << req_hndl->initiatorDescs->descCount()
+               << " descriptors of total size " << req_hndl->telemetry.totalBytes << "B in "
+               << xfer_time.count() << "us." << std::endl;
 }
-} // namespace
 
 nixl_status_t
 nixlAgent::postXferReq(nixlXferReqH *req_hndl,
@@ -870,7 +864,7 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
 
     // The initial checks should be fast if post succeeds, including them in the overall time
     if (data->telemetryEnabled) {
-        req_hndl->startTime = std::chrono::high_resolution_clock::now();
+        req_hndl->telemetry.startTime = std::chrono::high_resolution_clock::now();
     }
 
     NIXL_SHARED_LOCK_GUARD(data->lock);
@@ -925,15 +919,9 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
 
     if (data->telemetryEnabled) {
         if (req_hndl->status == NIXL_SUCCESS)
-            telemetryPrint("Posted and Completed",
-                           req_hndl->initiatorDescs->descCount(),
-                           req_hndl->totalBytes,
-                           req_hndl->startTime);
+            telemetryPrint("Posted and Completed", req_hndl);
         else if (req_hndl->status == NIXL_IN_PROG)
-            telemetryPrint("Posted",
-                           req_hndl->initiatorDescs->descCount(),
-                           req_hndl->totalBytes,
-                           req_hndl->startTime);
+            telemetryPrint("Posted", req_hndl);
         // Errors should show up in debug log separately, not adding a print here
     }
 
@@ -956,10 +944,7 @@ nixlAgent::getXferStatus (nixlXferReqH *req_hndl) const {
     }
 
     if (data->telemetryEnabled && req_hndl->status == NIXL_SUCCESS)
-        telemetryPrint("Completed",
-                       req_hndl->initiatorDescs->descCount(),
-                       req_hndl->totalBytes,
-                       req_hndl->startTime);
+        telemetryPrint("Completed", req_hndl);
 
     return req_hndl->status;
 }

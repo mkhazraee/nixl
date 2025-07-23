@@ -37,10 +37,10 @@ class nixlXferReqH {
         nixl_xfer_op_t     backendOp;
         nixl_status_t      status;
 
-        // Telemetry info, setting startTime to a default min value in case checkXfer is called
-        // before postXfer. If useful, endTime can be added as well.
-        chrono_point_t startTime = min_chrono_time;
-        uint64_t totalBytes;
+        struct {
+            chrono_point_t startTime;
+            size_t totalBytes;
+        } telemetry;
 
     public:
         inline nixlXferReqH() { }
@@ -54,6 +54,8 @@ class nixlXferReqH {
         }
 
     friend class nixlAgent;
+    friend void
+    telemetryPrint(const std::string &msg_type, nixlXferReqH *req_hndl);
 };
 
 class nixlDlistH {
