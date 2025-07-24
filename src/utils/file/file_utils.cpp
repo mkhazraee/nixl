@@ -50,10 +50,8 @@ queryFileInfoList(const std::vector<std::string> &filenames, std::vector<nixl_qu
     resp.clear();
     resp.reserve(filenames.size());
 
-    for (const auto &filename : filenames) {
-        auto file_info = queryFileInfo(filename);
-        resp.emplace_back(file_info);
-    }
+    for (const auto &filename : filenames)
+        resp.emplace_back(queryFileInfo(filename));
 
     return NIXL_SUCCESS;
 }

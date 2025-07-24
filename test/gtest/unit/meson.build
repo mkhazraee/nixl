@@ -31,7 +31,7 @@ unit_test_deps += [agent_unit_test_dep]
 unit_test_exe = executable('unit',
     sources : [
         'main.cpp',
-        'query_mem.cpp',
+        'query_file.cpp',
     ],
     cpp_args : cpp_args,
     dependencies : unit_test_deps,

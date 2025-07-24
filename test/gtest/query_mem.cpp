@@ -59,54 +59,6 @@ protected:
     std::string non_existent_file;
 };
 
-TEST_F(QueryMemTest, QueryFileInfoListWithEmptyVector) {
-    std::vector<std::string> filenames;
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 0);
-}
-
-TEST_F(QueryMemTest, QueryFileInfoListWithEmptyFilenames) {
-    std::vector<std::string> filenames = {"", "", ""};
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 3);
-    EXPECT_FALSE(resp[0].has_value());
-    EXPECT_FALSE(resp[1].has_value());
-    EXPECT_FALSE(resp[2].has_value());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoListWithMultipleExistingFiles) {
-    std::vector<std::string> filenames = {test_file1, test_file2};
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].has_value());
-    EXPECT_TRUE(resp[1].has_value());
-    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
-    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
-    std::vector<std::string> filenames = {test_file1, non_existent_file, test_file2, ""};
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 4);
-    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
-    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
-    EXPECT_FALSE(resp[3].has_value()); // empty filename doesn't exist
-}
-
-// Tests using the queryMem API directly
 TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
     // Create agent
     nixlAgentConfig cfg(false, false, 0, nixl_thread_sync_t::NIXL_THREAD_SYNC_RW);
