@@ -59,49 +59,6 @@ protected:
     std::string non_existent_file;
 };
 
-TEST_F(QueryMemTest, QueryFileInfoWithExistingFile) {
-    auto result = nixl::queryFileInfo(test_file1);
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("size") != result->end());
-    EXPECT_TRUE(result->find("mode") != result->end());
-    EXPECT_TRUE(result->find("mtime") != result->end());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoWithNonExistentFile) {
-    auto result = nixl::queryFileInfo(non_existent_file);
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoWithEmptyFilename) {
-    auto result = nixl::queryFileInfo("");
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoListWithMultipleExistingFiles) {
-    std::vector<std::string> filenames = {test_file1, test_file2};
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 2);
-    EXPECT_TRUE(resp[0].has_value());
-    EXPECT_TRUE(resp[1].has_value());
-    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
-    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
-}
-
-TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
-    std::vector<std::string> filenames = {test_file1, non_existent_file, test_file2};
-    std::vector<nixl_query_resp_t> resp;
-
-    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
-    EXPECT_EQ(status, NIXL_SUCCESS);
-    EXPECT_EQ(resp.size(), 3);
-    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
-    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
-    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
-}
-
 TEST_F(QueryMemTest, QueryFileInfoListWithEmptyVector) {
     std::vector<std::string> filenames;
     std::vector<nixl_query_resp_t> resp;
@@ -121,6 +78,32 @@ TEST_F(QueryMemTest, QueryFileInfoListWithEmptyFilenames) {
     EXPECT_FALSE(resp[0].has_value());
     EXPECT_FALSE(resp[1].has_value());
     EXPECT_FALSE(resp[2].has_value());
+}
+
+TEST_F(QueryMemTest, QueryFileInfoListWithMultipleExistingFiles) {
+    std::vector<std::string> filenames = {test_file1, test_file2};
+    std::vector<nixl_query_resp_t> resp;
+
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 2);
+    EXPECT_TRUE(resp[0].has_value());
+    EXPECT_TRUE(resp[1].has_value());
+    EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
+}
+
+TEST_F(QueryMemTest, QueryFileInfoListWithMixedFiles) {
+    std::vector<std::string> filenames = {test_file1, non_existent_file, test_file2, ""};
+    std::vector<nixl_query_resp_t> resp;
+
+    nixl_status_t status = nixl::queryFileInfoList(filenames, resp);
+    EXPECT_EQ(status, NIXL_SUCCESS);
+    EXPECT_EQ(resp.size(), 4);
+    EXPECT_TRUE(resp[0].has_value()); // test_file1 exists
+    EXPECT_FALSE(resp[1].has_value()); // non_existent_file doesn't exist
+    EXPECT_TRUE(resp[2].has_value()); // test_file2 exists
+    EXPECT_FALSE(resp[3].has_value()); // empty filename doesn't exist
 }
 
 // Tests using the queryMem API directly

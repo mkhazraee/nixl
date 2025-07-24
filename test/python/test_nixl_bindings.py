@@ -176,7 +176,7 @@ def test_query_mem():
 
     try:
         # Create an agent
-        config = nixl.nixlAgentConfig(False, False, 0, [])
+        config = nixl.nixlAgentConfig(False, False)
         agent = nixl.nixlAgent("test_agent", config)
 
         try:
