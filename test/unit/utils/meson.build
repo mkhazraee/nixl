@@ -14,7 +14,6 @@
 # limitations under the License.
 
 subdir('common')
-subdir('file')
 subdir('serdes')
 subdir('stream')
 subdir('ucx')

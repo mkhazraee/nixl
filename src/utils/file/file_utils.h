@@ -33,9 +33,9 @@ namespace nixl {
 /**
  * @brief Query file information for a single file
  * @param filename The filename to query (can be prefixed)
- * @return std::optional<nixl_b_params_t> containing file info if accessible, std::nullopt otherwise
+ * @return nixl_query_resp_t containing file info if accessible, std::nullopt otherwise
  */
-std::optional<nixl_b_params_t>
+nixl_query_resp_t
 queryFileInfo(std::string_view filename);
 
 /**

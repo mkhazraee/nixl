@@ -162,17 +162,19 @@ def test_agent():
 
 def test_query_mem():
     """Test basic queryMem functionality"""
+
+    os.makedirs("files_for_query", exist_ok=True)
     # Create temporary test files
-    temp_file1 = tempfile.NamedTemporaryFile(delete=False)
+    temp_file1 = tempfile.NamedTemporaryFile(dir="files_for_query", delete=False)
     temp_file1.write(b"Test content for queryMem file 1")
     temp_file1.close()
 
-    temp_file2 = tempfile.NamedTemporaryFile(delete=False)
+    temp_file2 = tempfile.NamedTemporaryFile(dir="files_for_query", delete=False)
     temp_file2.write(b"Test content for queryMem file 2")
     temp_file2.close()
 
     # Create a non-existent file path
-    non_existent_file = "/tmp/nixl_test_nonexistent_file_12345.txt"
+    non_existent_file = "./nixl_test_nonexistent_file_12345.txt"
 
     try:
         # Create an agent

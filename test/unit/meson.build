@@ -13,8 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Define gtest_dep for unit tests
-gtest_dep = dependency('gtest', version : '>=1.11.0', required : false)
-
 subdir('plugins')
 subdir('utils')

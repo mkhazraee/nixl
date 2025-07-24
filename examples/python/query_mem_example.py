@@ -36,10 +36,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # Create temporary test files
+    os.makedirs("files_for_query", exist_ok=True)
     temp_files = []
     for i in range(3):
         with tempfile.NamedTemporaryFile(
-            delete=False, suffix=f"_{i}.txt", mode="wb"
+            dir="files_for_query", delete=False, suffix=f"_{i}.txt", mode="wb"
         ) as temp_file:
             temp_file.write(f"Test content for file {i}".encode())
             temp_files.append(str(temp_file.name))

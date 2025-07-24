@@ -28,9 +28,13 @@ protected:
     void
     SetUp() override {
         // Create temporary test files
-        test_file1 = "/tmp/test_query_mem_1.txt";
-        test_file2 = "/tmp/test_query_mem_2.txt";
-        non_existent_file = "/tmp/non_existent_file.txt";
+        dir_path = "./files_for_query";
+        if (!(std::filesystem::exists(dir_path) && std::filesystem::is_directory(dir_path)))
+            std::filesystem::create_directory(dir_path);
+
+        test_file1 = dir_path + "/test_query_mem_1.txt";
+        test_file2 = dir_path + "/test_query_mem_2.txt";
+        non_existent_file = "./non_existent_file.txt";
 
         // Create test file 1
         {
@@ -54,6 +58,7 @@ protected:
         std::filesystem::remove(test_file2);
     }
 
+    std::string dir_path;
     std::string test_file1;
     std::string test_file2;
     std::string non_existent_file;
@@ -73,8 +78,8 @@ TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
 
     // Create descriptor list with existing files
     nixlDescList<nixlBlobDesc> descs(FILE_SEG);
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file2));
 
     // Create extra params with backend
     nixl_opt_args_t extra_params;
@@ -87,7 +92,9 @@ TEST_F(QueryMemTest, QueryMemWithExistingFiles) {
     EXPECT_TRUE(resp[0].has_value());
     EXPECT_TRUE(resp[1].has_value());
     EXPECT_TRUE(resp[0].value().find("size") != resp[0].value().end());
+    EXPECT_TRUE(std::stoi(resp[0].value()["size"]) == 24);
     EXPECT_TRUE(resp[1].value().find("size") != resp[1].value().end());
+    EXPECT_TRUE(std::stoi(resp[1].value()["size"]) == 24);
 }
 
 TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
@@ -104,9 +111,9 @@ TEST_F(QueryMemTest, QueryMemWithMixedFiles) {
 
     // Create descriptor list with existing and non-existing files
     nixlDescList<nixlBlobDesc> descs(FILE_SEG);
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, non_existent_file));
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, non_existent_file));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file2));
 
     // Create extra params with backend
     nixl_opt_args_t extra_params;
@@ -160,8 +167,8 @@ TEST_F(QueryMemTest, QueryMemWithEmptyFilenames) {
 
     // Create descriptor list with empty filenames
     nixlDescList<nixlBlobDesc> descs(FILE_SEG);
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, ""));
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, ""));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, ""));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, ""));
 
     // Create extra params with backend
     nixl_opt_args_t extra_params;
@@ -181,8 +188,8 @@ TEST_F(QueryMemTest, QueryMemDirectTest) {
 
     // Create descriptor list with existing files
     nixlDescList<nixlBlobDesc> descs(FILE_SEG);
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file1));
-    descs.addDesc(nixlBlobDesc(0, 1024, 0, test_file2));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file1));
+    descs.addDesc(nixlBlobDesc(0, 0, 0, test_file2));
 
     // Extract metadata from descriptors which are file names
     std::vector<nixl_blob_t> metadata(descs.descCount());

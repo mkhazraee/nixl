@@ -16,7 +16,6 @@
 unit_test_deps = [
     nixl_dep,
     gtest_dep,
-    file_utils_interface,
 ]
 
 aws_s3 = dependency('aws-cpp-sdk-s3', static: false, required: false)
@@ -31,14 +30,12 @@ unit_test_deps += [agent_unit_test_dep]
 unit_test_exe = executable('unit',
     sources : [
         'main.cpp',
-        'query_file.cpp',
     ],
     cpp_args : cpp_args,
     dependencies : unit_test_deps,
     include_directories: [
         nixl_inc_dirs,
         utils_inc_dirs,
-        include_directories('../../../src'),
     ],
     link_with: [nixl_build_lib],
     install : true
