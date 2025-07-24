@@ -474,19 +474,18 @@ PYBIND11_MODULE(_bindings, m) {
             "queryMem",
             [](nixlAgent &agent,
                nixl_reg_dlist_t descs,
-               std::vector<uintptr_t> backends) -> std::vector<nixl_query_resp_t> {
+               uintptr_t backend) -> std::vector<nixl_query_resp_t> {
                 std::vector<nixl_query_resp_t> resp;
                 nixl_opt_args_t extra_params;
 
-                for (uintptr_t backend : backends)
-                    extra_params.backends.push_back((nixlBackendH *)backend);
+                extra_params.backends.push_back((nixlBackendH *)backend);
 
                 nixl_status_t ret = agent.queryMem(descs, resp, &extra_params);
                 throw_nixl_exception(ret);
                 return resp;
             },
             py::arg("descs"),
-            py::arg("backends") = std::vector<uintptr_t>({}))
+            py::arg("backend"))
         .def(
             "makeConnection",
             [](nixlAgent &agent, const std::string &remote_agent, std::vector<uintptr_t> backends) {

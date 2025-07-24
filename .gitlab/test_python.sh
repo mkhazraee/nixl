@@ -61,8 +61,6 @@ python3 examples/python/partial_md_example.py
 python3 examples/python/partial_md_example.py --etcd
 pytest test/python
 
-echo "==== Running queryMem tests ===="
-python3 test/python/test_query_mem.py
 python3 test/python/prep_xfer_perf.py list
 python3 test/python/prep_xfer_perf.py array
 

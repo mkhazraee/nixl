@@ -19,17 +19,16 @@ import os
 import sys
 import tempfile
 
-# Try to import the NIXL bindings
 try:
-    import nixl._bindings as nixl_bindings
+    from nixl._api import nixl_agent, nixl_agent_config
 
     NIXL_AVAILABLE = True
 except ImportError:
-    print("NIXL bindings missing install NIXL.")
+    print("NIXL API missing install NIXL.")
     NIXL_AVAILABLE = False
 
 if __name__ == "__main__":
-    print("NIXL queryMem Python Bindings Example")
+    print("NIXL queryMem Python API Example")
     print("=" * 40)
 
     if not NIXL_AVAILABLE:
@@ -54,42 +53,40 @@ if __name__ == "__main__":
 
         # Create an NIXL agent
         print("Creating NIXL agent...")
-        config = nixl_bindings.nixlAgentConfig(False, False)
-        agent = nixl_bindings.nixlAgent("example_agent", config)
+        config = nixl_agent_config(False, False, 0, [])
+        agent = nixl_agent("example_agent", config)
 
-        # Create a registration descriptor list
-        print("Creating registration descriptor list...")
-        descs = nixl_bindings.nixlRegDList(nixl_bindings.FILE_SEG, False)
-
-        # Add descriptors with file paths in metaInfo
-        descs.addDesc((0, 0, 0, temp_files[0]))  # Existing file 1
-        descs.addDesc((0, 0, 0, temp_files[1]))  # Existing file 2
-        descs.addDesc((0, 0, 0, temp_files[2]))  # Existing file 3
-        descs.addDesc((0, 0, 0, non_existent_file))  # Non-existent file
-
-        print(f"Added {descs.descCount()} descriptors to query")
+        # Prepare a list of tuples as file paths in metaInfo field for querying.
+        # Addr and length and devID fields are set to 0 for file queries.
+        print("Preparing file paths for querying...")
+        file_paths = [
+            (0, 0, 0, temp_files[0]),  # Existing file 1
+            (0, 0, 0, temp_files[1]),  # Existing file 2
+            (0, 0, 0, non_existent_file),  # Non-existent file
+            (0, 0, 0, temp_files[2]),  # Existing file 3
+        ]
 
         # Query memory using queryMem
         print("Querying memory/storage information...")
 
         # Try to create a backend with POSIX plugin
         try:
-            params, mems = agent.getPluginParams("POSIX")
-            backend = agent.createBackend("POSIX", params)
+            params = agent.get_plugin_params("POSIX")
+            agent.create_backend("POSIX", params)
             print("Created backend: POSIX")
 
             # Query with specific backend
-            resp = agent.queryMem(descs, [backend])
+            resp = agent.query_memory(file_paths, "POSIX", mem_type="FILE")
         except Exception as e:
             print(f"POSIX backend creation failed: {e}")
             # Try MOCK_DRAM as fallback
             try:
-                params, mems = agent.getPluginParams("MOCK_DRAM")
-                backend = agent.createBackend("MOCK_DRAM", params)
+                params = agent.get_plugin_params("MOCK_DRAM")
+                agent.create_backend("MOCK_DRAM", params)
                 print("Created backend: MOCK_DRAM")
 
                 # Query with specific backend
-                resp = agent.queryMem(descs, [backend])
+                resp = agent.query_memory(file_paths, "MOCK_DRAM", mem_type="FILE")
             except Exception as e2:
                 print(f"MOCK_DRAM also failed: {e2}")
                 print("No working backends available")
