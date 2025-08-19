@@ -52,7 +52,7 @@ void test_thread(int id)
 
     ucx = nixlUcxEngine::create(init_params).release();
 
-    if(!USE_PTHREAD) ucx->progress();
+    if (!USE_PTHREAD) ((nixlUcxEngine *)ucx)->progress();
 
     ucx->getConnInfo(conn_info[id]);
 
@@ -71,7 +71,7 @@ void test_thread(int id)
 
     done[id] = true;
     while(!done[!id])
-        if(!USE_PTHREAD && id) ucx->progress();
+        if (!USE_PTHREAD && id) ((nixlUcxEngine *)ucx)->progress();
 
     std::cout << "Thread passed with id " << id << "\n";
 
@@ -83,7 +83,7 @@ void test_thread(int id)
     //wait for other
     while(!disconnect[!id]);
 
-    if(!USE_PTHREAD) ucx->progress();
+    if (!USE_PTHREAD) ((nixlUcxEngine *)ucx)->progress();
 
     std::cout << "Thread disconnected with id " << id << "\n";
 
