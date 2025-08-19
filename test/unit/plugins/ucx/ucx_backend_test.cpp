@@ -414,7 +414,7 @@ void performTransfer(nixlBackendEngine *ucx1, nixlBackendEngine *ucx2,
         while(ret3 == NIXL_IN_PROG) {
             ret3 = ucx1->checkXfer(handle);
             if(progress){
-                ucx2->progress();
+                ((nixlUcxEngine *)ucx2)->progress();
             }
             assert( ret3 == NIXL_SUCCESS || ret3 == NIXL_IN_PROG);
         }
@@ -436,7 +436,7 @@ void performTransfer(nixlBackendEngine *ucx1, nixlBackendEngine *ucx2,
             ret3 = ucx2->getNotifs(target_notifs);
             ret2 = target_notifs.size();
             if(progress){
-                ucx1->progress();
+                ((nixlUcxEngine *)ucx1)->progress();
             }
             assert(ret3 == NIXL_SUCCESS);
         }
