@@ -164,7 +164,6 @@ PYBIND11_MODULE(_bindings, m) {
 
     py::class_<nixl_xfer_telem_t>(m, "nixlXferTelemetry")
         .def(py::init<>())
-        .def_readonly("backendType", &nixl_xfer_telem_t::backendType)
         .def_readonly("startTime", &nixl_xfer_telem_t::startTime)
         .def_readonly("postDuration", &nixl_xfer_telem_t::postDuration)
         .def_readonly("xferDuration", &nixl_xfer_telem_t::xferDuration)

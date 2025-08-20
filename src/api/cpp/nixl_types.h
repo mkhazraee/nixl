@@ -243,18 +243,13 @@ constexpr auto min_chrono_time = std::chrono::steady_clock::time_point::min();
 /**
  * @brief A typedefs for a period of time in microseconds
  */
-using chrono_period_t = std::chrono::microseconds;
+using chrono_period_us_t = std::chrono::microseconds;
 
 /**
  * @struct nixlXferTelemetry
  * @brief A structure for telemetry output from agent API
  */
 struct nixlXferTelemetry {
-    /**
-     * @var backendType Type of the backend performing the transfer
-     */
-    nixl_backend_t backendType;
-
     /**
      * @var startTime Time that the transfer was posted
      */
@@ -263,13 +258,13 @@ struct nixlXferTelemetry {
     /**
      * @var postDuration Time it took to do the post operation
      */
-    chrono_period_t postDuration = chrono_period_t(0);
+    chrono_period_us_t postDuration = chrono_period_us_t(0);
 
     /**
      * @var xferDuration Time it took to complete the transfer
      *      if checkXferReq is called late, that might impact this result
      */
-    chrono_period_t xferDuration = chrono_period_t(0);
+    chrono_period_us_t xferDuration = chrono_period_us_t(0);
 
     /**
      * @var totalBytes Amount of bytes transferred in the request
