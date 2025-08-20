@@ -126,6 +126,18 @@ protected:
         return params;
     }
 
+    void
+    addAgent(unsigned int agent_num) {
+        ports.push_back(PortAllocator::next_tcp_port());
+        agents.emplace_back(
+            std::make_unique<nixlAgent>(getAgentName(agent_num), getConfig(getPort(agent_num))));
+        nixlBackendH *backend_handle = nullptr;
+        nixl_status_t status =
+            agents.back()->createBackend(getBackendName(), getBackendParams(), backend_handle);
+        ASSERT_EQ(status, NIXL_SUCCESS);
+        EXPECT_NE(backend_handle, nullptr);
+    }
+
     void SetUp() override
     {
 #ifdef HAVE_CUDA
@@ -134,14 +146,7 @@ protected:
 
         // Create two agents
         for (size_t i = 0; i < 2; i++) {
-            ports.push_back(PortAllocator::next_tcp_port());
-            agents.emplace_back(std::make_unique<nixlAgent>(getAgentName(i),
-                                                            getConfig(getPort(i))));
-            nixlBackendH *backend_handle = nullptr;
-            nixl_status_t status = agents.back()->createBackend(
-                    getBackendName(), getBackendParams(), backend_handle);
-            ASSERT_EQ(status, NIXL_SUCCESS);
-            EXPECT_NE(backend_handle, nullptr);
+            addAgent(i);
         }
     }
 
@@ -220,10 +225,11 @@ protected:
         return result;
     }
 
-    void exchangeMDIP()
-    {
-        for (size_t i = 0; i < agents.size(); i++) {
-            for (size_t j = 0; j < agents.size(); j++) {
+    void
+    exchangeMDIP(size_t start, size_t end) {
+        // Exchange metadata for the agents in the specified range using their IP
+        for (size_t i = start; i <= end; i++) {
+            for (size_t j = start; j <= end; j++) {
                 if (i == j) {
                     continue;
                 }
@@ -236,15 +242,15 @@ protected:
         }
     }
 
-    void exchangeMD()
-    {
-        // Connect the existing agents and exchange metadata
-        for (size_t i = 0; i < agents.size(); i++) {
+    void
+    exchangeMD(size_t start, size_t end) {
+        // Exchange metadata for the agents in the specified range
+        for (size_t i = start; i <= end; i++) {
             nixl_blob_t md;
             nixl_status_t status = agents[i]->getLocalMD(md);
             ASSERT_EQ(status, NIXL_SUCCESS);
 
-            for (size_t j = 0; j < agents.size(); j++) {
+            for (size_t j = start; j <= end; j++) {
                 if (i == j)
                     continue;
                 std::string remote_agent_name;
@@ -255,11 +261,11 @@ protected:
         }
     }
 
-    void invalidateMD()
-    {
-        // Disconnect the agents and invalidate remote metadata
-        for (size_t i = 0; i < agents.size(); i++) {
-            for (size_t j = 0; j < agents.size(); j++) {
+    void
+    invalidateMD(size_t start, size_t end) {
+        // Invalidate each other's metadata for the agents in the specified range
+        for (size_t i = start; i <= end; i++) {
+            for (size_t j = start; j < end; j++) {
                 if (i == j)
                     continue;
                 nixl_status_t status = agents[j]->invalidateRemoteMD(
@@ -321,7 +327,7 @@ protected:
                        size_t num_threads) {
         const size_t total_notifs = repeat * num_threads;
 
-        exchangeMD();
+        exchangeMD(0, 1);
 
         std::vector<std::thread> threads;
         nixl_notifs_t notif_map;
@@ -344,17 +350,24 @@ protected:
         }
 
         verifyNotifs(to, from_name, total_notifs, std::move(notif_map));
-        invalidateMD();
+        invalidateMD(0, 1);
     }
 
-    void doTransfer(nixlAgent &from, const std::string &from_name,
-                    nixlAgent &to, const std::string &to_name, size_t size,
-                    size_t count, size_t repeat, size_t num_threads,
-                    nixl_mem_t src_mem_type,
-                    std::vector<MemBuffer> src_buffers,
-                    nixl_mem_t dst_mem_type,
-                    std::vector<MemBuffer> dst_buffers)
-    {
+    void
+    doTransfer(nixlAgent &from,
+               const std::string &from_name,
+               nixlAgent &to,
+               const std::string &to_name,
+               size_t size,
+               size_t count,
+               size_t repeat,
+               size_t num_threads,
+               nixl_mem_t src_mem_type,
+               std::vector<MemBuffer> src_buffers,
+               nixl_mem_t dst_mem_type,
+               std::vector<MemBuffer> dst_buffers,
+               bool test_telemetry = false,
+               nixl_status_t expected_telem_status = NIXL_SUCCESS) {
         std::mutex logger_mutex;
         std::vector<std::thread> threads;
         nixl_notifs_t notif_map;
@@ -403,6 +416,18 @@ protected:
                              << "(" << bandwidth << " GB/s)";
                 }
 
+                if (test_telemetry) {
+                    nixl_xfer_telem_t telemetry;
+                    status = from.getXferTelemetry(xfer_req, telemetry);
+                    EXPECT_EQ(status, expected_telem_status);
+                    if (status == NIXL_SUCCESS) {
+                        EXPECT_TRUE(telemetry.startTime > min_chrono_time);
+                        EXPECT_TRUE(telemetry.postDuration > chrono_period_us_t(0));
+                        EXPECT_TRUE(telemetry.xferDuration > chrono_period_us_t(0));
+                        EXPECT_TRUE(telemetry.xferDuration >= telemetry.postDuration);
+                    }
+                }
+
                 status = from.releaseXferReq(xfer_req);
                 EXPECT_EQ(status, NIXL_SUCCESS);
             });
@@ -413,7 +438,6 @@ protected:
         }
 
         verifyNotifs(to, from_name, repeat * num_threads, std::move(notif_map));
-        invalidateMD();
     }
 
     nixlAgent &getAgent(size_t idx)
@@ -461,7 +485,7 @@ TEST_P(TestTransfer, RandomSizes)
         createRegisteredMem(getAgent(0), size, count, mem_type, src_buffers);
         createRegisteredMem(getAgent(1), size, count, mem_type, dst_buffers);
 
-        exchangeMD();
+        exchangeMD(0, 1);
         doTransfer(getAgent(0),
                    getAgentName(0),
                    getAgent(1),
@@ -474,6 +498,7 @@ TEST_P(TestTransfer, RandomSizes)
                    src_buffers,
                    mem_type,
                    dst_buffers);
+        invalidateMD(0, 1);
         deregisterMem(getAgent(0), src_buffers, mem_type);
         deregisterMem(getAgent(1), dst_buffers, mem_type);
     }
@@ -484,75 +509,70 @@ TEST_P(TestTransfer, GetXferTelemetryEnabled) {
     gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "y");
 
-    // Setup small registered memory on both agents
+    // Create fresh agents that read the current env var and add them to the fixture
+    addAgent(2);
+    addAgent(3);
+
     constexpr size_t size = 1024;
     constexpr size_t count = 1;
-
     std::vector<MemBuffer> src_buffers, dst_buffers;
-    createRegisteredMem(getAgent(0), size, count, DRAM_SEG, src_buffers);
-    createRegisteredMem(getAgent(1), size, count, DRAM_SEG, dst_buffers);
+    createRegisteredMem(getAgent(2), size, count, DRAM_SEG, src_buffers);
+    createRegisteredMem(getAgent(3), size, count, DRAM_SEG, dst_buffers);
 
-    exchangeMD();
+    exchangeMD(2, 3);
+    doTransfer(getAgent(2),
+               getAgentName(2),
+               getAgent(3),
+               getAgentName(3),
+               size,
+               count,
+               1,
+               1,
+               DRAM_SEG,
+               src_buffers,
+               DRAM_SEG,
+               dst_buffers,
+               true,
+               NIXL_SUCCESS);
 
-    // Use the same single-transfer setup as in doTransfer but without notifications
-    nixl_opt_args_t extra_params;
-    nixlXferReqH *xfer_req = nullptr;
-    ASSERT_EQ(getAgent(0).createXferReq(NIXL_WRITE,
-                                        makeDescList<nixlBasicDesc>(src_buffers, DRAM_SEG),
-                                        makeDescList<nixlBasicDesc>(dst_buffers, DRAM_SEG),
-                                        getAgentName(1),
-                                        xfer_req,
-                                        &extra_params),
-              NIXL_SUCCESS);
-    auto status = getAgent(0).postXferReq(xfer_req);
-    ASSERT_TRUE(status == NIXL_SUCCESS || status == NIXL_IN_PROG);
-    ASSERT_TRUE(
-        wait_until_true([&]() { return getAgent(0).getXferStatus(xfer_req) == NIXL_SUCCESS; }));
-
-    nixl_xfer_telem_t telemetry;
-    ASSERT_EQ(getAgent(0).getXferTelemetry(xfer_req, telemetry), NIXL_SUCCESS);
-    EXPECT_EQ(telemetry.descCount, count);
-    EXPECT_EQ(telemetry.totalBytes, size * count);
-
-    EXPECT_EQ(getAgent(0).releaseXferReq(xfer_req), NIXL_SUCCESS);
-    deregisterMem(getAgent(0), src_buffers, DRAM_SEG);
-    deregisterMem(getAgent(1), dst_buffers, DRAM_SEG);
-    invalidateMD();
+    invalidateMD(2, 3);
+    deregisterMem(getAgent(2), src_buffers, DRAM_SEG);
+    deregisterMem(getAgent(3), dst_buffers, DRAM_SEG);
 }
 
 TEST_P(TestTransfer, GetXferTelemetryDisabled) {
     gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "n");
 
+    // Create fresh agents that read the current env var and add them to the fixture
+    addAgent(2);
+    addAgent(3);
+
     constexpr size_t size = 512;
     constexpr size_t count = 1;
     std::vector<MemBuffer> src_buffers, dst_buffers;
-    createRegisteredMem(getAgent(0), size, count, DRAM_SEG, src_buffers);
-    createRegisteredMem(getAgent(1), size, count, DRAM_SEG, dst_buffers);
+    createRegisteredMem(getAgent(2), size, count, DRAM_SEG, src_buffers);
+    createRegisteredMem(getAgent(3), size, count, DRAM_SEG, dst_buffers);
 
-    exchangeMD();
+    exchangeMD(2, 3);
+    doTransfer(getAgent(2),
+               getAgentName(2),
+               getAgent(3),
+               getAgentName(3),
+               size,
+               count,
+               1,
+               1,
+               DRAM_SEG,
+               src_buffers,
+               DRAM_SEG,
+               dst_buffers,
+               true,
+               NIXL_ERR_NO_TELEMETRY);
 
-    nixlXferReqH *xfer_req = nullptr;
-    nixl_opt_args_t extra_params;
-    ASSERT_EQ(getAgent(0).createXferReq(NIXL_WRITE,
-                                        makeDescList<nixlBasicDesc>(src_buffers, DRAM_SEG),
-                                        makeDescList<nixlBasicDesc>(dst_buffers, DRAM_SEG),
-                                        getAgentName(1),
-                                        xfer_req,
-                                        &extra_params),
-              NIXL_SUCCESS);
-    auto status = getAgent(0).postXferReq(xfer_req);
-    ASSERT_TRUE(status == NIXL_SUCCESS || status == NIXL_IN_PROG);
-    ASSERT_TRUE(
-        wait_until_true([&]() { return getAgent(0).getXferStatus(xfer_req) == NIXL_SUCCESS; }));
-
-    nixl_xfer_telem_t telemetry;
-    EXPECT_EQ(getAgent(0).getXferTelemetry(xfer_req, telemetry), NIXL_ERR_NO_TELEMETRY);
-
-    EXPECT_EQ(getAgent(0).releaseXferReq(xfer_req), NIXL_SUCCESS);
-    deregisterMem(getAgent(0), src_buffers, DRAM_SEG);
-    deregisterMem(getAgent(1), dst_buffers, DRAM_SEG);
-    invalidateMD();
+    invalidateMD(2, 3);
+    deregisterMem(getAgent(2), src_buffers, DRAM_SEG);
+    deregisterMem(getAgent(3), dst_buffers, DRAM_SEG);
 }
 
 TEST_P(TestTransfer, remoteMDFromSocket)
@@ -565,12 +585,13 @@ TEST_P(TestTransfer, remoteMDFromSocket)
     createRegisteredMem(getAgent(0), size, count, mem_type, src_buffers);
     createRegisteredMem(getAgent(1), size, count, mem_type, dst_buffers);
 
-    exchangeMDIP();
+    exchangeMDIP(0, 1);
     doTransfer(getAgent(0), getAgentName(0), getAgent(1), getAgentName(1),
                size, count, 1, 1,
                mem_type, src_buffers,
                mem_type, dst_buffers);
 
+    invalidateMD(0, 1);
     deregisterMem(getAgent(0), src_buffers, mem_type);
     deregisterMem(getAgent(1), dst_buffers, mem_type);
 }
