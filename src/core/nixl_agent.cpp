@@ -104,8 +104,8 @@ nixlXferReqH::updateRequestStats(std::unique_ptr<nixlTelemetry> &telemetry_pub,
 
     static const std::array<std::string, 3> nixl_post_status_str = {
         " Posted", " Posted and Completed", " Completed"};
-    auto duration = std::chrono::duration_cast<chrono_period_t>(std::chrono::steady_clock::now() -
-                                                                telemetry.startTime);
+    auto duration = std::chrono::duration_cast<chrono_period_us_t>(
+        std::chrono::steady_clock::now() - telemetry.startTime);
     if (stat_status == NIXL_TELEMETRY_POST) {
         telemetry.postDuration = duration;
     } else if (stat_status == NIXL_TELEMETRY_POST_AND_FINISH) {
@@ -119,7 +119,7 @@ nixlXferReqH::updateRequestStats(std::unique_ptr<nixlTelemetry> &telemetry_pub,
         telemetry_pub->addXferTime(duration, backendOp == NIXL_WRITE, telemetry.totalBytes);
     }
 
-    NIXL_TRACE << "[NIXL TELEMETRY]: From backend " << telemetry.backendType
+    NIXL_TRACE << "[NIXL TELEMETRY]: From backend " << engine->getType()
                << nixl_post_status_str[stat_status] << " Xfer with " << telemetry.descCount
                << " descriptors of total size " << telemetry.totalBytes << "B in "
                << duration.count() << "us.";
@@ -834,7 +834,6 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     if (data->telemetry_) {
         handle->telemetry.totalBytes = total_bytes;
-        handle->telemetry.backendType = handle->engine->getType();
         handle->telemetry.descCount = handle->initiatorDescs->descCount();
     }
 
@@ -980,7 +979,6 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
 
     if (data->telemetry_) {
         handle->telemetry.totalBytes = total_bytes;
-        handle->telemetry.backendType = handle->engine->getType();
         handle->telemetry.descCount = handle->initiatorDescs->descCount();
     }
 
