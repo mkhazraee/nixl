@@ -667,8 +667,7 @@ PYBIND11_MODULE(_bindings, m) {
             "getXferTelemetry",
             [](nixlAgent &agent, uintptr_t reqh) -> nixl_xfer_telem_t {
                 nixl_xfer_telem_t telemetry;
-                nixl_status_t ret =
-                    agent.getXferTelemetry((nixlXferReqH *)reqh, telemetry);
+                nixl_status_t ret = agent.getXferTelemetry((nixlXferReqH *)reqh, telemetry);
                 throw_nixl_exception(ret);
                 return telemetry;
             },
