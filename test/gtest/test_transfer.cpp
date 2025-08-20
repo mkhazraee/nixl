@@ -479,6 +479,82 @@ TEST_P(TestTransfer, RandomSizes)
     }
 }
 
+TEST_P(TestTransfer, GetXferTelemetryEnabled) {
+    // Enable telemetry for this test via helper (mirrors telemetry_test.cpp style)
+    gtest::ScopedEnv env;
+    env.addVar("NIXL_TELEMETRY_ENABLE", "y");
+
+    // Setup small registered memory on both agents
+    constexpr size_t size = 1024;
+    constexpr size_t count = 1;
+
+    std::vector<MemBuffer> src_buffers, dst_buffers;
+    createRegisteredMem(getAgent(0), size, count, DRAM_SEG, src_buffers);
+    createRegisteredMem(getAgent(1), size, count, DRAM_SEG, dst_buffers);
+
+    exchangeMD();
+
+    // Use the same single-transfer setup as in doTransfer but without notifications
+    nixl_opt_args_t extra_params;
+    nixlXferReqH *xfer_req = nullptr;
+    ASSERT_EQ(getAgent(0).createXferReq(NIXL_WRITE,
+                                        makeDescList<nixlBasicDesc>(src_buffers, DRAM_SEG),
+                                        makeDescList<nixlBasicDesc>(dst_buffers, DRAM_SEG),
+                                        getAgentName(1),
+                                        xfer_req,
+                                        &extra_params),
+              NIXL_SUCCESS);
+    auto status = getAgent(0).postXferReq(xfer_req);
+    ASSERT_TRUE(status == NIXL_SUCCESS || status == NIXL_IN_PROG);
+    ASSERT_TRUE(
+        wait_until_true([&]() { return getAgent(0).getXferStatus(xfer_req) == NIXL_SUCCESS; }));
+
+    nixl_xfer_telem_t telemetry;
+    ASSERT_EQ(getAgent(0).getXferTelemetry(xfer_req, telemetry), NIXL_SUCCESS);
+    EXPECT_EQ(telemetry.descCount, count);
+    EXPECT_EQ(telemetry.totalBytes, size * count);
+
+    EXPECT_EQ(getAgent(0).releaseXferReq(xfer_req), NIXL_SUCCESS);
+    deregisterMem(getAgent(0), src_buffers, DRAM_SEG);
+    deregisterMem(getAgent(1), dst_buffers, DRAM_SEG);
+    invalidateMD();
+}
+
+TEST_P(TestTransfer, GetXferTelemetryDisabled) {
+    gtest::ScopedEnv env;
+    env.addVar("NIXL_TELEMETRY_ENABLE", "n");
+
+    constexpr size_t size = 512;
+    constexpr size_t count = 1;
+    std::vector<MemBuffer> src_buffers, dst_buffers;
+    createRegisteredMem(getAgent(0), size, count, DRAM_SEG, src_buffers);
+    createRegisteredMem(getAgent(1), size, count, DRAM_SEG, dst_buffers);
+
+    exchangeMD();
+
+    nixlXferReqH *xfer_req = nullptr;
+    nixl_opt_args_t extra_params;
+    ASSERT_EQ(getAgent(0).createXferReq(NIXL_WRITE,
+                                        makeDescList<nixlBasicDesc>(src_buffers, DRAM_SEG),
+                                        makeDescList<nixlBasicDesc>(dst_buffers, DRAM_SEG),
+                                        getAgentName(1),
+                                        xfer_req,
+                                        &extra_params),
+              NIXL_SUCCESS);
+    auto status = getAgent(0).postXferReq(xfer_req);
+    ASSERT_TRUE(status == NIXL_SUCCESS || status == NIXL_IN_PROG);
+    ASSERT_TRUE(
+        wait_until_true([&]() { return getAgent(0).getXferStatus(xfer_req) == NIXL_SUCCESS; }));
+
+    nixl_xfer_telem_t telemetry;
+    EXPECT_EQ(getAgent(0).getXferTelemetry(xfer_req, telemetry), NIXL_ERR_NO_TELEMETRY);
+
+    EXPECT_EQ(getAgent(0).releaseXferReq(xfer_req), NIXL_SUCCESS);
+    deregisterMem(getAgent(0), src_buffers, DRAM_SEG);
+    deregisterMem(getAgent(1), dst_buffers, DRAM_SEG);
+    invalidateMD();
+}
+
 TEST_P(TestTransfer, remoteMDFromSocket)
 {
     std::vector<MemBuffer> src_buffers, dst_buffers;
