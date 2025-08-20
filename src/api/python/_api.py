@@ -623,7 +623,9 @@ class nixl_agent:
     @return nixlXferTelemetry object
     """
 
-    def get_xfer_telemetry(self, handle: nixl_xfer_handle) -> nixlBind.nixlXferTelemetry:
+    def get_xfer_telemetry(
+        self, handle: nixl_xfer_handle
+    ) -> nixlBind.nixlXferTelemetry:
         return self.agent.getXferTelemetry(handle)
 
     """
