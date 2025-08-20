@@ -18,6 +18,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/operators.h>
 #include <pybind11/numpy.h>
+#include <pybind11/chrono.h>
 
 #include <tuple>
 #include <iostream>
@@ -160,6 +161,16 @@ PYBIND11_MODULE(_bindings, m) {
         .value("NIXL_ERR_UNKNOWN", NIXL_ERR_UNKNOWN)
         .value("NIXL_ERR_NOT_SUPPORTED", NIXL_ERR_NOT_SUPPORTED)
         .export_values();
+
+    py::class_<nixl_xfer_telem_t>(m, "nixlXferTelemetry")
+        .def(py::init<>())
+        .def_readonly("backendType", &nixl_xfer_telem_t::backendType)
+        .def_readonly("startTime", &nixl_xfer_telem_t::startTime)
+        .def_readonly("postDuration", &nixl_xfer_telem_t::postDuration)
+        .def_readonly("xferDuration", &nixl_xfer_telem_t::xferDuration)
+        .def_readonly("totalBytes", &nixl_xfer_telem_t::totalBytes)
+        .def_readonly("descCount", &nixl_xfer_telem_t::descCount);
+
 
     py::register_exception<nixlNotPostedError>(m, "nixlNotPostedError");
     py::register_exception<nixlInvalidParamError>(m, "nixlInvalidParamError");
@@ -652,6 +663,16 @@ PYBIND11_MODULE(_bindings, m) {
                  throw_nixl_exception(ret);
                  return ret;
              })
+        .def(
+            "getXferTelemetry",
+            [](nixlAgent &agent, uintptr_t reqh) -> nixl_xfer_telem_t {
+                nixl_xfer_telem_t telemetry;
+                nixl_status_t ret =
+                    agent.getXferTelemetry((nixlXferReqH *)reqh, telemetry);
+                throw_nixl_exception(ret);
+                return telemetry;
+            },
+            py::arg("reqh"))
         .def("queryXferBackend",
              [](nixlAgent &agent, uintptr_t reqh) -> uintptr_t {
                  nixlBackendH *backend = nullptr;
