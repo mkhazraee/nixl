@@ -104,25 +104,24 @@ nixlXferReqH::updateRequestStats(std::unique_ptr<nixlTelemetry> &telemetry_pub,
 
     static const std::array<std::string, 3> nixl_post_status_str = {
         " Posted", " Posted and Completed", " Completed"};
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - telemetry.startTime_);
-
+    auto duration = std::chrono::duration_cast<chrono_period_t>(std::chrono::steady_clock::now() -
+                                                                telemetry.startTime);
     if (stat_status == NIXL_TELEMETRY_POST) {
-        telemetry.postDuration_ = duration;
+        telemetry.postDuration = duration;
     } else if (stat_status == NIXL_TELEMETRY_POST_AND_FINISH) {
-        telemetry.postDuration_ = duration;
-        telemetry.xferDuration_ = duration;
+        telemetry.postDuration = duration;
+        telemetry.xferDuration = duration;
         telemetry_pub->addPostTime(duration);
-        telemetry_pub->addXferTime(duration, backendOp == NIXL_WRITE, telemetry.totalBytes_);
+        telemetry_pub->addXferTime(duration, backendOp == NIXL_WRITE, telemetry.totalBytes);
     } else { // stat_status == NIXL_TELEMETRY_FINISH
-        telemetry.xferDuration_ = duration;
-        telemetry_pub->addPostTime(telemetry.postDuration_);
-        telemetry_pub->addXferTime(duration, backendOp == NIXL_WRITE, telemetry.totalBytes_);
+        telemetry.xferDuration = duration;
+        telemetry_pub->addPostTime(telemetry.postDuration);
+        telemetry_pub->addXferTime(duration, backendOp == NIXL_WRITE, telemetry.totalBytes);
     }
 
-    NIXL_TRACE << "[NIXL TELEMETRY]: From backend " << engine->getType()
-               << nixl_post_status_str[stat_status] << " Xfer with " << initiatorDescs->descCount()
-               << " descriptors of total size " << telemetry.totalBytes_ << "B in "
+    NIXL_TRACE << "[NIXL TELEMETRY]: From backend " << telemetry.backendType
+               << nixl_post_status_str[stat_status] << " Xfer with " << telemetry.descCount
+               << " descriptors of total size " << telemetry.totalBytes << "B in "
                << duration.count() << "us.";
 }
 
@@ -832,7 +831,12 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
     handle->hasNotif = opt_args.hasNotif;
     handle->backendOp = operation;
     handle->status = NIXL_ERR_NOT_POSTED;
-    handle->telemetry.totalBytes_ = total_bytes;
+
+    if (data->telemetry_) {
+        handle->telemetry.totalBytes = total_bytes;
+        handle->telemetry.backendType = handle->engine->getType();
+        handle->telemetry.descCount = handle->initiatorDescs->descCount();
+    }
 
     ret = handle->engine->prepXfer (handle->backendOp,
                                     *handle->initiatorDescs,
@@ -973,7 +977,12 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     handle->status = NIXL_ERR_NOT_POSTED;
     handle->notifMsg = opt_args.notifMsg;
     handle->hasNotif = opt_args.hasNotif;
-    handle->telemetry.totalBytes_ = total_bytes;
+
+    if (data->telemetry_) {
+        handle->telemetry.totalBytes = total_bytes;
+        handle->telemetry.backendType = handle->engine->getType();
+        handle->telemetry.descCount = handle->initiatorDescs->descCount();
+    }
 
     ret1 = handle->engine->prepXfer (handle->backendOp,
                                      *handle->initiatorDescs,
@@ -1047,7 +1056,9 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
         return NIXL_ERR_INVALID_PARAM;
     }
 
-    if (data->telemetry_) req_hndl->telemetry.startTime_ = std::chrono::steady_clock::now();
+    if (data->telemetry_) {
+        req_hndl->telemetry.startTime = std::chrono::steady_clock::now();
+    }
 
     NIXL_SHARED_LOCK_GUARD(data->lock);
     // Check if the remote was invalidated before post/repost
@@ -1182,17 +1193,15 @@ nixlAgent::getXferStatus (nixlXferReqH *req_hndl) const {
 nixl_status_t
 nixlAgent::getXferTelemetry(const nixlXferReqH *req_hndl, nixl_xfer_telem_t &telemetry) const {
 
-    if (!data->telemetry_) return NIXL_ERR_NO_TELEMETRY;
+    if (!data->telemetry_) {
+        NIXL_ERROR << "getXferTelemetry cannot return values when telemetry is not enabled.";
+        return NIXL_ERR_NO_TELEMETRY;
+    }
 
     if (req_hndl->status < 0) return req_hndl->status;
 
     // NIXL_SUCCESS or NIXL_IN_PROG, values are initialized
-    telemetry.backendType = req_hndl->engine->getType();
-    telemetry.startTime = req_hndl->telemetry.startTime_;
-    telemetry.postDuration = req_hndl->telemetry.postDuration_;
-    telemetry.xferDuration = req_hndl->telemetry.xferDuration_;
-    telemetry.totalBytes = req_hndl->telemetry.totalBytes_;
-    telemetry.descCount = req_hndl->initiatorDescs->descCount();
+    telemetry = req_hndl->telemetry;
 
     return req_hndl->status;
 }

@@ -48,13 +48,7 @@ class nixlXferReqH {
         nixl_xfer_op_t     backendOp;
         nixl_status_t      status;
 
-        // Initializing time values, as getXferTelem might be called before postXfer.
-        struct {
-            chrono_point_t startTime_ = min_chrono_time;
-            chrono_period_t postDuration_ = chrono_period_t(0);
-            chrono_period_t xferDuration_ = chrono_period_t(0);
-            size_t totalBytes_;
-        } telemetry;
+        nixl_xfer_telem_t telemetry;
 
     public:
         inline nixlXferReqH() { }

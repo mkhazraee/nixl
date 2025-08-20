@@ -241,7 +241,7 @@ using chrono_point_t = std::chrono::steady_clock::time_point;
 constexpr auto min_chrono_time = std::chrono::steady_clock::time_point::min();
 
 /**
- * @brief A typedefs for a period of time
+ * @brief A typedefs for a period of time in microseconds
  */
 using chrono_period_t = std::chrono::microseconds;
 
@@ -258,29 +258,29 @@ struct nixlXferTelemetry {
     /**
      * @var startTime Time that the transfer was posted
      */
-    chrono_point_t startTime;
+    chrono_point_t startTime = min_chrono_time;
 
     /**
      * @var postDuration Time it took to do the post operation
      */
-    chrono_period_t postDuration;
+    chrono_period_t postDuration = chrono_period_t(0);
 
     /**
      * @var xferDuration Time it took to complete the transfer
      *      if checkXferReq is called late, that might impact this result
      */
-    chrono_period_t xferDuration;
+    chrono_period_t xferDuration = chrono_period_t(0);
 
     /**
      * @var totalBytes Amount of bytes transferred in the request
      */
-    size_t totalBytes;
+    size_t totalBytes = 0;
 
     /**
      * @var descCount Number of descriptors in the transfer request.
      *      If any merging of descriptors were performed, it will be reflected here.
      */
-    size_t descCount;
+    size_t descCount = 0;
 };
 
 /**
