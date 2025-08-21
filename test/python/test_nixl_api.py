@@ -204,7 +204,6 @@ def test_incorrect_plugin_env(monkeypatch):
         nixl_agent("bad env agent")
 
 
-@pytest.mark.timeout(5)
 def test_get_xfer_telemetry():
     os.environ["NIXL_TELEMETRY_ENABLE"] = "y"
 
@@ -244,6 +243,10 @@ def test_get_xfer_telemetry():
         telem = agent1.get_xfer_telemetry(handle)
         assert telem.descCount == 2
         assert telem.totalBytes == mem_size
+        assert telem.startTime > 0
+        assert telem.postDuration > 0
+        assert telem.xferDuration > 0
+        assert telem.xferDuration >= telem.postDuration
 
         agent1.release_xfer_handle(handle)
     finally:

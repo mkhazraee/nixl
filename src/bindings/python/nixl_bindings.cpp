@@ -164,9 +164,16 @@ PYBIND11_MODULE(_bindings, m) {
 
     py::class_<nixl_xfer_telem_t>(m, "nixlXferTelemetry")
         .def(py::init<>())
-        .def_readonly("startTime", &nixl_xfer_telem_t::startTime)
-        .def_readonly("postDuration", &nixl_xfer_telem_t::postDuration)
-        .def_readonly("xferDuration", &nixl_xfer_telem_t::xferDuration)
+        .def_property_readonly("startTime",
+                               [](const nixl_xfer_telem_t &t) {
+                                   return std::chrono::duration_cast<chrono_period_us_t>(
+                                              t.startTime.time_since_epoch())
+                                       .count();
+                               })
+        .def_property_readonly("postDuration",
+                               [](const nixl_xfer_telem_t &t) { return t.postDuration.count(); })
+        .def_property_readonly("xferDuration",
+                               [](const nixl_xfer_telem_t &t) { return t.xferDuration.count(); })
         .def_readonly("totalBytes", &nixl_xfer_telem_t::totalBytes)
         .def_readonly("descCount", &nixl_xfer_telem_t::descCount);
 

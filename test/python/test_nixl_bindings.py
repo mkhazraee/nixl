@@ -150,6 +150,10 @@ def test_agent():
     telem = agent1.getXferTelemetry(handle)
     assert telem.descCount == 1
     assert telem.totalBytes == req_size
+    assert telem.startTime > 0
+    assert telem.postDuration > 0
+    assert telem.xferDuration > 0
+    assert telem.xferDuration >= telem.postDuration
 
     agent1.releaseXferReq(handle)
 
