@@ -504,10 +504,95 @@ TEST_P(TestTransfer, RandomSizes)
     }
 }
 
+TEST_P(TestTransfer, remoteMDFromSocket)
+{
+    std::vector<MemBuffer> src_buffers, dst_buffers;
+    constexpr size_t size = 16 * 1024;
+    constexpr size_t count = 4;
+    nixl_mem_t mem_type = m_cuda_device? VRAM_SEG : DRAM_SEG;
+
+    createRegisteredMem(getAgent(0), size, count, mem_type, src_buffers);
+    createRegisteredMem(getAgent(1), size, count, mem_type, dst_buffers);
+
+    exchangeMDIP(0, 1);
+    doTransfer(getAgent(0), getAgentName(0), getAgent(1), getAgentName(1),
+               size, count, 1, 1,
+               mem_type, src_buffers,
+               mem_type, dst_buffers);
+
+    invalidateMD(0, 1);
+    deregisterMem(getAgent(0), src_buffers, mem_type);
+    deregisterMem(getAgent(1), dst_buffers, mem_type);
+}
+
+TEST_P(TestTransfer, NotificationOnly) {
+    constexpr size_t repeat = 100;
+    constexpr size_t num_threads = 4;
+    doNotificationTest(
+            getAgent(0), getAgentName(0), getAgent(1), getAgentName(1), repeat, num_threads);
+}
+
+TEST_P(TestTransfer, SelfNotification) {
+    // UCX_MO does not support local communication
+    if (getBackendName() == "UCX_MO") {
+        GTEST_SKIP() << "UCX_MO does not support local communication";
+    }
+
+    constexpr size_t repeat = 100;
+    constexpr size_t num_threads = 4;
+    doNotificationTest(
+            getAgent(0), getAgentName(0), getAgent(0), getAgentName(0), repeat, num_threads);
+}
+
+TEST_P(TestTransfer, ListenerCommSize) {
+    std::vector<MemBuffer> buffers;
+    createRegisteredMem(getAgent(1), 64, 10000, DRAM_SEG, buffers);
+    auto status = fetchRemoteMD(0, 1);
+    ASSERT_EQ(NIXL_SUCCESS, status);
+    ASSERT_TRUE(
+        wait_until_true([&]() { return checkRemoteMD(0, 1) == NIXL_SUCCESS; }));
+    deregisterMem(getAgent(1), buffers, DRAM_SEG);
+}
+
 TEST_P(TestTransfer, GetXferTelemetryEnabled) {
-    // Enable telemetry for this test via helper (mirrors telemetry_test.cpp style)
     gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "y");
+
+    // Create fresh agents that read the current env var and add them to the fixture
+    addAgent(2);
+    addAgent(3);
+
+    constexpr size_t size = 1024;
+    constexpr size_t count = 1;
+    std::vector<MemBuffer> src_buffers, dst_buffers;
+    createRegisteredMem(getAgent(2), size, count, DRAM_SEG, src_buffers);
+    createRegisteredMem(getAgent(3), size, count, DRAM_SEG, dst_buffers);
+
+    exchangeMD(2, 3);
+    doTransfer(getAgent(2),
+               getAgentName(2),
+               getAgent(3),
+               getAgentName(3),
+               size,
+               count,
+               1,
+               1,
+               DRAM_SEG,
+               src_buffers,
+               DRAM_SEG,
+               dst_buffers,
+               true,
+               NIXL_SUCCESS);
+
+    invalidateMD(2, 3);
+    deregisterMem(getAgent(2), src_buffers, DRAM_SEG);
+    deregisterMem(getAgent(3), dst_buffers, DRAM_SEG);
+}
+
+TEST_P(TestTransfer, GetXferTelemetryAPI) {
+    // Enable telemetry without file output
+    gtest::ScopedEnv env;
+    env.addVar("NIXL_TELEMETRY_ENABLE", "a");
 
     // Create fresh agents that read the current env var and add them to the fixture
     addAgent(2);
@@ -573,56 +658,6 @@ TEST_P(TestTransfer, GetXferTelemetryDisabled) {
     invalidateMD(2, 3);
     deregisterMem(getAgent(2), src_buffers, DRAM_SEG);
     deregisterMem(getAgent(3), dst_buffers, DRAM_SEG);
-}
-
-TEST_P(TestTransfer, remoteMDFromSocket)
-{
-    std::vector<MemBuffer> src_buffers, dst_buffers;
-    constexpr size_t size = 16 * 1024;
-    constexpr size_t count = 4;
-    nixl_mem_t mem_type = m_cuda_device? VRAM_SEG : DRAM_SEG;
-
-    createRegisteredMem(getAgent(0), size, count, mem_type, src_buffers);
-    createRegisteredMem(getAgent(1), size, count, mem_type, dst_buffers);
-
-    exchangeMDIP(0, 1);
-    doTransfer(getAgent(0), getAgentName(0), getAgent(1), getAgentName(1),
-               size, count, 1, 1,
-               mem_type, src_buffers,
-               mem_type, dst_buffers);
-
-    invalidateMD(0, 1);
-    deregisterMem(getAgent(0), src_buffers, mem_type);
-    deregisterMem(getAgent(1), dst_buffers, mem_type);
-}
-
-TEST_P(TestTransfer, NotificationOnly) {
-    constexpr size_t repeat = 100;
-    constexpr size_t num_threads = 4;
-    doNotificationTest(
-            getAgent(0), getAgentName(0), getAgent(1), getAgentName(1), repeat, num_threads);
-}
-
-TEST_P(TestTransfer, SelfNotification) {
-    // UCX_MO does not support local communication
-    if (getBackendName() == "UCX_MO") {
-        GTEST_SKIP() << "UCX_MO does not support local communication";
-    }
-
-    constexpr size_t repeat = 100;
-    constexpr size_t num_threads = 4;
-    doNotificationTest(
-            getAgent(0), getAgentName(0), getAgent(0), getAgentName(0), repeat, num_threads);
-}
-
-TEST_P(TestTransfer, ListenerCommSize) {
-    std::vector<MemBuffer> buffers;
-    createRegisteredMem(getAgent(1), 64, 10000, DRAM_SEG, buffers);
-    auto status = fetchRemoteMD(0, 1);
-    ASSERT_EQ(NIXL_SUCCESS, status);
-    ASSERT_TRUE(
-        wait_until_true([&]() { return checkRemoteMD(0, 1) == NIXL_SUCCESS; }));
-    deregisterMem(getAgent(1), buffers, DRAM_SEG);
 }
 
 INSTANTIATE_TEST_SUITE_P(ucx, TestTransfer, testing::Values(std::make_tuple("UCX", true, 2, 0)));
