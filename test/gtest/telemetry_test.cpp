@@ -56,8 +56,13 @@ protected:
     SetUp() override {
         testDir_ = "/tmp/telemetry_test_files";
         testFile_ = "test_telemetry";
-        if (!fs::exists(testDir_)) {
-            fs::create_directory(testDir_);
+        try {
+            if (!fs::exists(testDir_)) {
+                fs::create_directory(testDir_);
+            }
+        }
+        catch (const fs::filesystem_error &e) {
+            throw std::runtime_error("Could not create the directory for telemetry test.")
         }
 
         envHelper_.addVar(TELEMETRY_ENABLED_VAR, "y");
