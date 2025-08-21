@@ -62,7 +62,7 @@ protected:
             }
         }
         catch (const fs::filesystem_error &e) {
-            throw std::runtime_error("Could not create the directory for telemetry test.")
+            throw std::runtime_error("Could not create the directory for telemetry test.");
         }
 
         envHelper_.addVar(TELEMETRY_ENABLED_VAR, "y");
