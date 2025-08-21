@@ -128,14 +128,14 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
         throw std::invalid_argument("Agent needs a name");
 
     memorySection = new nixlLocalSection();
-    auto telemetry_env_val = std::getenv(TELEMETRY_ENABLED_VAR);
-    auto telemetry_enabled = (telemetry_env_val != nullptr &&
-                              (telemetry_env_val[0] == 'y' || telemetry_env_val[0] == 'Y' ||
-                               telemetry_env_val[0] == '1'));
-    if (telemetry_enabled) {
-        telemetry_ = std::make_unique<nixlTelemetry>(name, backendEngines);
-    } else if (telemetry_env_val != nullptr) {
-        NIXL_WARN << "Invalid NIXL_TELEMETRY_ENABLE environment variable, not enabling telemetry.";
+    const char *telemetry_env_val = std::getenv(TELEMETRY_ENABLED_VAR);
+
+    if (telemetry_env_val != nullptr) {
+        if (!strcasecmp(telemetry_env_val, "y"))
+            telemetry_ = std::make_unique<nixlTelemetry>(name, backendEngines);
+        else if (strcasecmp(telemetry_env_val, "n"))
+            NIXL_WARN
+                << "Invalid NIXL_TELEMETRY_ENABLE environment variable, not enabling telemetry.";
     }
 }
 
