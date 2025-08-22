@@ -52,7 +52,8 @@
         return NIXL_ERR_MISMATCH;                    \
     } while (0)
 
-const char TELEMETRY_ENABLED_VAR[] = "NIXL_TELEMETRY_ENABLE";
+constexpr char TELEMETRY_ENABLED_VAR[] = "NIXL_TELEMETRY_ENABLE";
+constexpr char TELEMETRY_DIR_VAR[] = "NIXL_TELEMETRY_DIR";
 static const std::vector<std::vector<std::string>> illegal_plugin_combinations = {
     {"GDS", "GDS_MT"},
 };
@@ -144,12 +145,20 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
 
     memorySection = new nixlLocalSection();
     const char *telemetry_env_val = std::getenv(TELEMETRY_ENABLED_VAR);
+    const char *telemetry_env_dir = std::getenv(TELEMETRY_DIR_VAR);
 
     if (telemetry_env_val != nullptr) {
         if (!strcasecmp(telemetry_env_val, "y") || !strcasecmp(telemetry_env_val, "1") ||
             !strcasecmp(telemetry_env_val, "yes") || !strcasecmp(telemetry_env_val, "on")) {
-            telemetry_ = std::make_unique<nixlTelemetry>(name, backendEngines);
-            NIXL_DEBUG << "NIXL telemetry is enabled";
+            telemetryEnabled = true;
+            if (telemetry_env_dir != nullptr) {
+                telemetry_ = std::make_unique<nixlTelemetry>(
+                    name, std::string(telemetry_env_dir), backendEngines);
+                NIXL_DEBUG << "NIXL telemetry is enabled with output file: "
+                           << telemetry_env_dir << "/" << name;
+            } else {
+                NIXL_DEBUG << "NIXL telemetry is enabled without an output file";
+            }
         } else if (!strcasecmp(telemetry_env_val, "n") || !strcasecmp(telemetry_env_val, "0") ||
                    !strcasecmp(telemetry_env_val, "no") || !strcasecmp(telemetry_env_val, "off")) {
             NIXL_DEBUG << "NIXL telemetry is disabled";

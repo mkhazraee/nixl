@@ -554,9 +554,10 @@ TEST_P(TestTransfer, ListenerCommSize) {
     deregisterMem(getAgent(1), buffers, DRAM_SEG);
 }
 
-TEST_P(TestTransfer, GetXferTelemetryEnabled) {
+TEST_P(TestTransfer, GetXferTelemetryFile) {
     gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "y");
+    env.addVar("NIXL_TELEMETRY_DIR", "/tmp/");
 
     // Create fresh agents that read the current env var and add them to the fixture
     addAgent(2);
@@ -592,7 +593,7 @@ TEST_P(TestTransfer, GetXferTelemetryEnabled) {
 TEST_P(TestTransfer, GetXferTelemetryAPI) {
     // Enable telemetry without file output
     gtest::ScopedEnv env;
-    env.addVar("NIXL_TELEMETRY_ENABLE", "a");
+    env.addVar("NIXL_TELEMETRY_ENABLE", "y");
 
     // Create fresh agents that read the current env var and add them to the fixture
     addAgent(2);
