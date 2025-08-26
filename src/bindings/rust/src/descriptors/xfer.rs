@@ -23,7 +23,7 @@ pub struct XferDescList<'a> {
 
 impl<'a> XferDescList<'a> {
     /// Creates a new transfer descriptor list for the given memory type
-    pub fn new(mem_type: MemType, sorted: bool) -> Result<Self, NixlError> {
+    pub fn new(mem_type: MemType) -> Result<Self, NixlError> {
         let mut dlist = ptr::null_mut();
         let status = unsafe {
             nixl_capi_create_xfer_dlist(mem_type as nixl_capi_mem_type_t, &mut dlist)
@@ -45,11 +45,6 @@ impl<'a> XferDescList<'a> {
 
     pub fn as_ptr(&self) -> *mut bindings::nixl_capi_xfer_dlist_s {
         self.inner.as_ptr()
-    }
-
-    /// Creates a new sorted transfer descriptor list for the given memory type
-    pub fn new_sorted(mem_type: MemType) -> Result<Self, NixlError> {
-        Self::new(mem_type, true)
     }
 
     /// Returns the memory type of the transfer descriptor list

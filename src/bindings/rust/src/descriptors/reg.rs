@@ -23,7 +23,7 @@ pub struct RegDescList<'a> {
 
 impl<'a> RegDescList<'a> {
     /// Creates a new registration descriptor list for the given memory type
-    pub fn new(mem_type: MemType, sorted: bool) -> Result<Self, NixlError> {
+    pub fn new(mem_type: MemType) -> Result<Self, NixlError> {
         let mut dlist = ptr::null_mut();
         let status = unsafe {
             nixl_capi_create_reg_dlist(mem_type as nixl_capi_mem_type_t, &mut dlist)
@@ -44,11 +44,6 @@ impl<'a> RegDescList<'a> {
             }
             _ => Err(NixlError::RegDescListCreationFailed),
         }
-    }
-
-    /// Creates a new sorted registration descriptor list for the given memory type
-    pub fn new_sorted(mem_type: MemType) -> Result<Self, NixlError> {
-        Self::new(mem_type, true)
     }
 
     pub fn get_type(&self) -> Result<MemType, NixlError> {
