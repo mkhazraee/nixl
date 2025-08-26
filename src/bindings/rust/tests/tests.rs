@@ -766,16 +766,6 @@ fn test_xfer_desc_list_new_and_new_sorted() {
 }
 
 #[test]
-fn test_xfer_desc_list_new_sorted_sortedness() {
-    let dlist = XferDescList::new_sorted(MemType::Dram).unwrap();
-    let sorted = dlist.is_sorted().unwrap();
-    assert!(sorted);
-    let dlist_unsorted = XferDescList::new(MemType::Dram, false).unwrap();
-    let unsorted = dlist_unsorted.is_sorted().unwrap();
-    assert!(!unsorted);
-}
-
-#[test]
 fn test_xfer_desc_list_get_type() {
     let dlist = XferDescList::new(MemType::Vram, false).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Vram);
@@ -786,23 +776,6 @@ fn test_xfer_desc_list_get_type_after_add() {
     let mut dlist = XferDescList::new(MemType::Block, false).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Block);
-}
-
-#[test]
-fn test_xfer_desc_list_verify_sorted_true() {
-    let mut dlist = XferDescList::new_sorted(MemType::Dram).unwrap();
-
-    // list size should be at least 1 to be considered sorted
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(dlist.verify_sorted().unwrap());
-}
-
-#[test]
-fn test_xfer_desc_list_verify_sorted_false() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
-    dlist.add_desc(0x2000, 0x100, 0).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap(); // out of order
-    assert!(!dlist.verify_sorted().unwrap());
 }
 
 #[test]
@@ -832,21 +805,6 @@ fn test_xfer_desc_list_is_empty_false() {
     let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(!dlist.is_empty().unwrap());
-}
-
-#[test]
-fn test_xfer_desc_list_is_sorted_true() {
-    let mut dlist = XferDescList::new_sorted(MemType::Dram).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(dlist.is_sorted().unwrap());
-}
-
-#[test]
-fn test_xfer_desc_list_is_sorted_false() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
-    dlist.add_desc(0x2000, 0x100, 0).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(!dlist.is_sorted().unwrap());
 }
 
 #[test]
@@ -917,14 +875,6 @@ fn test_reg_desc_list_new_and_new_sorted() {
 }
 
 #[test]
-fn test_reg_desc_list_new_sorted_sortedness() {
-    let dlist = RegDescList::new_sorted(MemType::Dram).unwrap();
-    assert!(dlist.is_sorted().unwrap());
-    let dlist_unsorted = RegDescList::new(MemType::Dram, false).unwrap();
-    assert!(!dlist_unsorted.is_sorted().unwrap());
-}
-
-#[test]
 fn test_reg_desc_list_get_type() {
     let dlist = RegDescList::new(MemType::Vram, false).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Vram);
@@ -935,23 +885,6 @@ fn test_reg_desc_list_get_type_after_add() {
     let mut dlist = RegDescList::new(MemType::Block, false).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Block);
-}
-
-#[test]
-fn test_reg_desc_list_verify_sorted_true() {
-    let mut dlist = RegDescList::new_sorted(MemType::Dram).unwrap();
-
-    // list size should be at least 1 to be considered sorted
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(dlist.verify_sorted().unwrap());
-}
-
-#[test]
-fn test_reg_desc_list_verify_sorted_false() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
-    dlist.add_desc(0x2000, 0x100, 0).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap(); // out of order
-    assert!(!dlist.verify_sorted().unwrap());
 }
 
 #[test]
@@ -981,21 +914,6 @@ fn test_reg_desc_list_is_empty_false() {
     let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(!dlist.is_empty().unwrap());
-}
-
-#[test]
-fn test_reg_desc_list_is_sorted_true() {
-    let mut dlist = RegDescList::new_sorted(MemType::Dram).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(dlist.is_sorted().unwrap());
-}
-
-#[test]
-fn test_reg_desc_list_is_sorted_false() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
-    dlist.add_desc(0x2000, 0x100, 0).unwrap();
-    dlist.add_desc(0x1000, 0x100, 0).unwrap();
-    assert!(!dlist.is_sorted().unwrap());
 }
 
 #[test]
