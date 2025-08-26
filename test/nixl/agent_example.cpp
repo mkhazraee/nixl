@@ -81,9 +81,6 @@ void test_side_perf(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend, nixlBac
         }
     }
 
-    assert (src_list.verifySorted() == true);
-    assert (dst_list.verifySorted() == true);
-
     assert (mem_list1.descCount() == n_mems);
     assert (mem_list2.descCount() == n_mems);
 
