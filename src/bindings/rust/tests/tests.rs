@@ -54,7 +54,6 @@ fn create_agent_with_backend(name: &str) -> Result<(Agent, OptArgs), NixlError> 
 
 
 fn create_storage_list(agent: &Agent, opt_args: &OptArgs, size: usize) -> Vec<SystemStorage> {
-    const STORAGE_SIZE: usize = 1024;
     let mut storage_list = Vec::new();
     for _ in 0..size {
         let mut storage = SystemStorage::new(1024).unwrap();
@@ -1116,11 +1115,10 @@ fn test_prep_xfer_dlist_success() {
 
     // 1. Create agents and backends
     let (local_agent, opt_args) = create_agent_with_backend("local_agent").expect("Failed to create agent");
-    let (remote_agent, opt_args_remote) = create_agent_with_backend("remote_agent").expect("Failed to create agent");
+    let (remote_agent, _opt_args_remote) = create_agent_with_backend("remote_agent").expect("Failed to create agent");
 
     // 2. Create memory regions and register them
     let mut storage_list = create_storage_list(&local_agent, &opt_args, DLIST_SIZE);
-    let remote_storage_list = create_storage_list(&remote_agent, &opt_args_remote, DLIST_SIZE);
 
     {
         // 3. Create transfer descriptor list

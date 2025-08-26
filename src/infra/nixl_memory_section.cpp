@@ -51,10 +51,9 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
 
     nixl_sec_dlist_t* base = it->second;
     // assert(base->verifySorted());
-    int size = base->descCount();
     resp.resize(query.descCount());
 
-    const nixlBasicDesc *q;
+    int size = base->descCount();
     int s_index = 0;
 
     // Use logN search for the first element, instead of linear search

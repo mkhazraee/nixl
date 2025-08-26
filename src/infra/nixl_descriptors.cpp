@@ -383,13 +383,14 @@ nixlSecDescList::getIndex(const nixlBasicDesc &query) const {
 }
 
 int
-nixlSecDescList::getCoveringIndex(const nixlBasicDesc &q) const {
-    auto itr = std::lower_bound(this->descs.begin(), this->descs.end(), q);
-    if (itr != this->descs.end() && itr->covers(q))
+nixlSecDescList::getCoveringIndex(const nixlBasicDesc &query) const {
+    auto itr = std::lower_bound(this->descs.begin(), this->descs.end(), query);
+    if (itr != this->descs.end() && itr->covers(query))
         return static_cast<int>(itr - this->descs.begin());
+    // If query and element don't have the same start address, try previous entry
     if (itr != this->descs.begin()) {
         auto prev_itr = std::prev(itr, 1);
-        if (prev_itr->covers(q)) return static_cast<int>(prev_itr - this->descs.begin());
+        if (prev_itr->covers(query)) return static_cast<int>(prev_itr - this->descs.begin());
     }
     return -1;
 }

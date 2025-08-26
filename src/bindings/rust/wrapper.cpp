@@ -269,12 +269,12 @@ nixl_capi_check_remote_md(nixl_capi_agent_t agent, const char* remote_name, nixl
   try {
     // If descs is null, create an empty descriptor list of DRAM type
     if (!descs) {
-      nixl_xfer_dlist_t empty_list(DRAM_SEG, true);
-      nixl_status_t ret = agent->inner->checkRemoteMD(remote_name, empty_list);
-      return ret == NIXL_SUCCESS ? NIXL_CAPI_SUCCESS : NIXL_CAPI_ERROR_BACKEND;
+        nixl_xfer_dlist_t empty_list(DRAM_SEG);
+        nixl_status_t ret = agent->inner->checkRemoteMD(remote_name, empty_list);
+        return ret == NIXL_SUCCESS ? NIXL_CAPI_SUCCESS : NIXL_CAPI_ERROR_BACKEND;
     } else {
-      nixl_status_t ret = agent->inner->checkRemoteMD(remote_name, *descs->dlist);
-      return ret == NIXL_SUCCESS ? NIXL_CAPI_SUCCESS : NIXL_CAPI_ERROR_BACKEND;
+        nixl_status_t ret = agent->inner->checkRemoteMD(remote_name, *descs->dlist);
+        return ret == NIXL_SUCCESS ? NIXL_CAPI_SUCCESS : NIXL_CAPI_ERROR_BACKEND;
     }
   }
   catch (...) {
