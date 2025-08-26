@@ -45,15 +45,13 @@ def prep_handles(agent: nixl_agent, xfer_dlist, reg_dlist, indices):
     logger.info("register_memory:\t%.4f sec", elapsed)
 
     start = time.perf_counter()
-    local_prep_handle = agent.prep_xfer_dlist(
-        "NIXL_INIT_AGENT", xfer_dlist, "DRAM", False
-    )
+    local_prep_handle = agent.prep_xfer_dlist("NIXL_INIT_AGENT", xfer_dlist, "DRAM")
     elapsed = time.perf_counter() - start
     assert local_prep_handle
     logger.info("prep_xfer_dlist INIT:\t%.4f sec", elapsed)
 
     start = time.perf_counter()
-    remote_prep_handle = agent.prep_xfer_dlist("agent", xfer_dlist, "DRAM", False)
+    remote_prep_handle = agent.prep_xfer_dlist("agent", xfer_dlist, "DRAM")
     elapsed = time.perf_counter() - start
     assert remote_prep_handle
     logger.info("prep_xfer_dlist SELF:\t%.4f sec", elapsed)
