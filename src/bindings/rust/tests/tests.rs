@@ -67,7 +67,7 @@ fn create_storage_list(agent: &Agent, opt_args: &OptArgs, size: usize) -> Vec<Sy
 }
 
 fn create_dlist<'a>(storage_list: &'a mut Vec<SystemStorage>) -> Result<XferDescList<'a>, NixlError> {
-    let mut dlist = XferDescList::new(MemType::Dram, false).expect("Failed to create XferDescList");
+    let mut dlist = XferDescList::new(MemType::Dram).expect("Failed to create XferDescList");
     for storage in storage_list.iter_mut() {
         dlist.add_storage_desc(storage).expect(&format!("Failed to add storage descriptor for storage"));
     }
@@ -262,7 +262,7 @@ fn test_get_backend_params() -> Result<(), NixlError> {
 
 #[test]
 fn test_xfer_dlist() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
 
     // Add some descriptors
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
@@ -281,7 +281,7 @@ fn test_xfer_dlist() {
 
 #[test]
 fn test_reg_dlist() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
 
     // Add some descriptors
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
@@ -305,7 +305,7 @@ fn test_storage_descriptor_lifetime() {
 
     {
         // Create a descriptor list with shorter lifetime
-        let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+        let mut dlist = XferDescList::new(MemType::Dram).unwrap();
         dlist.add_storage_desc(&storage).unwrap();
         assert_eq!(dlist.len().unwrap(), 1);
         // dlist is dropped here, but storage is still valid
@@ -320,7 +320,7 @@ fn test_multiple_storage_descriptors() {
     let storage1 = SystemStorage::new(1024).unwrap();
     let storage2 = SystemStorage::new(2048).unwrap();
 
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
 
     // Add multiple descriptors
     dlist.add_storage_desc(&storage1).unwrap();
@@ -518,10 +518,10 @@ fn test_basic_agent_lifecycle() {
     let remote_name = agent1.load_remote_md(&metadata).unwrap();
     assert_eq!(remote_name, "A2");
 
-    let mut local_xfer_dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut local_xfer_dlist = XferDescList::new(MemType::Dram).unwrap();
     local_xfer_dlist.add_storage_desc(&storage1).unwrap();
 
-    let mut remote_xfer_dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut remote_xfer_dlist = XferDescList::new(MemType::Dram).unwrap();
     remote_xfer_dlist.add_storage_desc(&storage2).unwrap();
 
     let mut xfer_args = OptArgs::new().unwrap();
@@ -718,7 +718,7 @@ fn test_check_remote_metadata() {
     // Create descriptor list with memory that exists in agent2
     let mem_type = MemType::Dram;
     let mut xfer_desc_list =
-        XferDescList::new(mem_type, false).expect("Failed to create xfer desc list");
+        XferDescList::new(mem_type).expect("Failed to create xfer desc list");
     xfer_desc_list
         .add_desc(
             unsafe { storage.as_ptr() } as usize,
@@ -740,7 +740,7 @@ fn test_check_remote_metadata() {
 
     // Create a descriptor list with invalid memory address
     let mut invalid_desc_list =
-        XferDescList::new(mem_type, false).expect("Failed to create invalid desc list");
+        XferDescList::new(mem_type).expect("Failed to create invalid desc list");
     invalid_desc_list
         .add_desc(0xdeadbeef, 1024, 0)
         .expect("Failed to add invalid descriptor");
@@ -758,29 +758,27 @@ fn test_check_remote_metadata() {
 }
 
 #[test]
-fn test_xfer_desc_list_new_and_new_sorted() {
-    let dlist = XferDescList::new(MemType::Dram, false).unwrap();
+fn test_xfer_desc_list_new() {
+    let dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.is_empty().unwrap());
-    let dlist_sorted = XferDescList::new_sorted(MemType::Dram).unwrap();
-    assert!(dlist_sorted.is_empty().unwrap());
 }
 
 #[test]
 fn test_xfer_desc_list_get_type() {
-    let dlist = XferDescList::new(MemType::Vram, false).unwrap();
+    let dlist = XferDescList::new(MemType::Vram).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Vram);
 }
 
 #[test]
 fn test_xfer_desc_list_get_type_after_add() {
-    let mut dlist = XferDescList::new(MemType::Block, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Block).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Block);
 }
 
 #[test]
 fn test_xfer_desc_list_desc_count_basic() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 0);
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 1);
@@ -788,7 +786,7 @@ fn test_xfer_desc_list_desc_count_basic() {
 
 #[test]
 fn test_xfer_desc_list_desc_count_after_clear() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.clear().unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 0);
@@ -796,20 +794,20 @@ fn test_xfer_desc_list_desc_count_after_clear() {
 
 #[test]
 fn test_xfer_desc_list_is_empty_true() {
-    let dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_xfer_desc_list_is_empty_false() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(!dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_xfer_desc_list_trim_basic() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.trim().unwrap();
     assert!(dlist.desc_count().unwrap() <= 1);
@@ -817,14 +815,14 @@ fn test_xfer_desc_list_trim_basic() {
 
 #[test]
 fn test_xfer_desc_list_trim_empty() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.trim().is_ok());
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_xfer_desc_list_rem_desc_basic() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(dlist.rem_desc(0).is_ok());
     assert!(dlist.is_empty().unwrap());
@@ -832,13 +830,13 @@ fn test_xfer_desc_list_rem_desc_basic() {
 
 #[test]
 fn test_xfer_desc_list_rem_desc_out_of_bounds() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.rem_desc(0).is_err());
 }
 
 #[test]
 fn test_xfer_desc_list_clear_basic() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.clear().unwrap();
     assert!(dlist.is_empty().unwrap());
@@ -846,20 +844,20 @@ fn test_xfer_desc_list_clear_basic() {
 
 #[test]
 fn test_xfer_desc_list_clear_empty() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.clear().is_ok());
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_xfer_desc_list_print_basic() {
-    let dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let dlist = XferDescList::new(MemType::Dram).unwrap();
     assert!(dlist.print().is_ok());
 }
 
 #[test]
 fn test_xfer_desc_list_print_after_add() {
-    let mut dlist = XferDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = XferDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(dlist.print().is_ok());
 }
@@ -867,29 +865,27 @@ fn test_xfer_desc_list_print_after_add() {
 // ----------- RegDescList API TESTS -----------
 
 #[test]
-fn test_reg_desc_list_new_and_new_sorted() {
-    let dlist = RegDescList::new(MemType::Dram, false).unwrap();
+fn test_reg_desc_list_new() {
+    let dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.is_empty().unwrap());
-    let dlist_sorted = RegDescList::new_sorted(MemType::Dram).unwrap();
-    assert!(dlist_sorted.is_empty().unwrap());
 }
 
 #[test]
 fn test_reg_desc_list_get_type() {
-    let dlist = RegDescList::new(MemType::Vram, false).unwrap();
+    let dlist = RegDescList::new(MemType::Vram).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Vram);
 }
 
 #[test]
 fn test_reg_desc_list_get_type_after_add() {
-    let mut dlist = RegDescList::new(MemType::Block, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Block).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.get_type().unwrap(), MemType::Block);
 }
 
 #[test]
 fn test_reg_desc_list_desc_count_basic() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 0);
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 1);
@@ -897,7 +893,7 @@ fn test_reg_desc_list_desc_count_basic() {
 
 #[test]
 fn test_reg_desc_list_desc_count_after_clear() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.clear().unwrap();
     assert_eq!(dlist.desc_count().unwrap(), 0);
@@ -905,20 +901,20 @@ fn test_reg_desc_list_desc_count_after_clear() {
 
 #[test]
 fn test_reg_desc_list_is_empty_true() {
-    let dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_reg_desc_list_is_empty_false() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(!dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_reg_desc_list_trim_basic() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.trim().unwrap();
     assert!(dlist.desc_count().unwrap() <= 1);
@@ -926,14 +922,14 @@ fn test_reg_desc_list_trim_basic() {
 
 #[test]
 fn test_reg_desc_list_trim_empty() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.trim().is_ok());
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_reg_desc_list_rem_desc_basic() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(dlist.rem_desc(0).is_ok());
     assert!(dlist.is_empty().unwrap());
@@ -941,13 +937,13 @@ fn test_reg_desc_list_rem_desc_basic() {
 
 #[test]
 fn test_reg_desc_list_rem_desc_out_of_bounds() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.rem_desc(0).is_err());
 }
 
 #[test]
 fn test_reg_desc_list_clear_basic() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     dlist.clear().unwrap();
     assert!(dlist.is_empty().unwrap());
@@ -955,20 +951,20 @@ fn test_reg_desc_list_clear_basic() {
 
 #[test]
 fn test_reg_desc_list_clear_empty() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.clear().is_ok());
     assert!(dlist.is_empty().unwrap());
 }
 
 #[test]
 fn test_reg_desc_list_print_basic() {
-    let dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let dlist = RegDescList::new(MemType::Dram).unwrap();
     assert!(dlist.print().is_ok());
 }
 
 #[test]
 fn test_reg_desc_list_print_after_add() {
-    let mut dlist = RegDescList::new(MemType::Dram, false).unwrap();
+    let mut dlist = RegDescList::new(MemType::Dram).unwrap();
     dlist.add_desc(0x1000, 0x100, 0).unwrap();
     assert!(dlist.print().is_ok());
 }
@@ -1023,7 +1019,7 @@ fn test_query_mem_with_files() {
 
     // Create descriptor list with existing and non-existing files
     let mut descs =
-        RegDescList::new(MemType::File, false).expect("Failed to create descriptor list");
+        RegDescList::new(MemType::File).expect("Failed to create descriptor list");
 
     // Add blob descriptors with filenames as metadata
     for (i, file_path) in file_paths.iter().enumerate() {
@@ -1098,7 +1094,7 @@ fn test_query_mem_empty_list() {
     };
 
     // Create empty descriptor list
-    let descs = RegDescList::new(MemType::File, false).expect("Failed to create descriptor list");
+    let descs = RegDescList::new(MemType::File).expect("Failed to create descriptor list");
 
     // Query memory with empty list
     let resp = agent
