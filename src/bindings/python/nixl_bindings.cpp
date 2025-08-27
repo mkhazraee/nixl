@@ -65,14 +65,29 @@ public:
     nixlRepostActiveError(const char *what) : runtime_error(what) {}
 };
 
+class nixlUnknownError : public std::runtime_error {
+public:
+    nixlUnknownError(const char *what) : runtime_error(what) {}
+};
+
 class nixlNotSupportedError : public std::runtime_error {
 public:
     nixlNotSupportedError(const char *what) : runtime_error(what) {}
 };
 
-class nixlUnknownError : public std::runtime_error {
+class nixlRemoteDisconnectError : public std::runtime_error {
 public:
-    nixlUnknownError(const char *what) : runtime_error(what) {}
+    nixlRemoteDisconnectError(const char *what) : runtime_error(what) {}
+};
+
+class nixlCancelledError : public std::runtime_error {
+public:
+    nixlCancelledError(const char *what) : runtime_error(what) {}
+};
+
+class nixlNoTelemetryError : public std::runtime_error {
+public:
+    nixlNoTelemetryError(const char *what) : runtime_error(what) {}
 };
 
 void
@@ -108,6 +123,15 @@ throw_nixl_exception(const nixl_status_t &status) {
         break;
     case NIXL_ERR_NOT_SUPPORTED:
         throw nixlNotSupportedError(nixlEnumStrings::statusStr(status).c_str());
+        break;
+    case NIXL_ERR_REMOTE_DISCONNECT:
+        throw nixlRemoteDisconnectError(nixlEnumStrings::statusStr(status).c_str());
+        break;
+    case NIXL_ERR_CANCELED:
+        throw nixlCancelledError(nixlEnumStrings::statusStr(status).c_str());
+        break;
+    case NIXL_ERR_NO_TELEMETRY:
+        throw nixlNoTelemetryError(nixlEnumStrings::statusStr(status).c_str());
         break;
     default:
         throw std::runtime_error("BAD_STATUS");
@@ -187,6 +211,9 @@ PYBIND11_MODULE(_bindings, m) {
     py::register_exception<nixlRepostActiveError>(m, "nixlRepostActiveError");
     py::register_exception<nixlUnknownError>(m, "nixlUnknownError");
     py::register_exception<nixlNotSupportedError>(m, "nixlNotSupportedError");
+    py::register_exception<nixlRemoteDisconnectError>(m, "nixlRemoteDisconnectError");
+    py::register_exception<nixlCancelledError>(m, "nixlCancelledError");
+    py::register_exception<nixlNoTelemetryError>(m, "nixlNoTelemetryError");
 
     py::class_<nixl_xfer_dlist_t>(m, "nixlXferDList")
         .def(py::init<nixl_mem_t, bool, int>(),
