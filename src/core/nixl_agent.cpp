@@ -92,6 +92,8 @@ nixlEnumStrings::statusStr(const nixl_status_t &status) {
         case NIXL_ERR_REMOTE_DISCONNECT: return "NIXL_ERR_REMOTE_DISCONNECT";
         case NIXL_ERR_CANCELED:
             return "NIXL_ERR_CANCELED";
+        case NIXL_ERR_NO_TELEMETRY:
+            return "NIXL_ERR_NO_TELEMETRY";
         default:                         return "BAD_STATUS";
     }
 }
