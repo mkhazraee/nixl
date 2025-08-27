@@ -70,6 +70,7 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
     resp.resize(query.descCount());
 
     int size = base->descCount();
+    const nixlBasicDesc *q;
     int s_index = 0;
 
     // Use logN search for the first element, instead of linear search
