@@ -40,12 +40,13 @@ backend_set_t* nixlMemSection::queryBackends (const nixl_mem_t &mem) {
 // Helper function to find the covering index for a given query element
 namespace {
 inline int
-getCoveringIndex(const nixl_sec_dlist_t *base, const nixlBasicDesc &q) {
-    auto itr = std::lower_bound(base->begin(), base->end(), q);
-    if (itr != base->end() && itr->covers(q)) return static_cast<int>(itr - base->begin());
+getCoveringIndex(const nixl_sec_dlist_t *base, const nixlBasicDesc &query) {
+    auto itr = std::lower_bound(base->begin(), base->end(), query);
+    if (itr != base->end() && itr->covers(query)) return static_cast<int>(itr - base->begin());
+    // If query and element don't have the same start address, try previous entry
     if (itr != base->begin()) {
         auto prev_itr = std::prev(itr, 1);
-        if (prev_itr->covers(q)) return static_cast<int>(prev_itr - base->begin());
+        if (prev_itr->covers(query)) return static_cast<int>(prev_itr - base->begin());
     }
     return -1;
 }
@@ -64,42 +65,33 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
     if (it==sectionMap.end())
         return NIXL_ERR_NOT_FOUND;
 
-    nixlBasicDesc *p;
     nixl_sec_dlist_t* base = it->second;
     assert(base->isSorted());
     resp.resize(query.descCount());
 
-    const nixlBasicDesc *q;
-
-    // Unified traversal for both sorted and unsorted queries
     int size = base->descCount();
     int s_index = 0;
 
-    // First element: use lower_bound helper to jump to correct region
-    q = &query[0];
-    p = &resp[0];
-    s_index = getCoveringIndex(base, *q);
+    // Use logN search for the first element, instead of linear search
+    s_index = getCoveringIndex(base, query[0]);
     if (s_index < 0) {
         resp.clear();
         return NIXL_ERR_UNKNOWN;
     }
-    *p = *q;
+    static_cast<nixlBasicDesc &>(resp[0]) = query[0];
     resp[0].metadataP = (*base)[s_index].metadataP;
 
-    // Remaining elements: walk forward for non-decreasing runs; lower_bound on local disorder
+    // Walk forward for non-decreasing elements; logN search on temporal disorder
     for (int i = 1; i < query.descCount(); ++i) {
-        q = &query[i];
-
-        if (*q < query[i - 1]) {
-            // Local disorder: resolve only this element using logN search
-            int idx = getCoveringIndex(base, *q);
-            if (idx < 0) {
+        if (query[i] < query[i - 1]) {
+            // Disorder in the list, resolve this element using logN search
+            s_index = getCoveringIndex(base, query[i]);
+            if (s_index < 0) {
                 resp.clear();
                 return NIXL_ERR_UNKNOWN;
             }
-            s_index = idx;
         } else {
-            while (s_index < size && !(*base)[s_index].covers(*q))
+            while (s_index < size && !(*base)[s_index].covers(query[i]))
                 ++s_index;
             if (s_index == size) {
                 resp.clear();
@@ -107,8 +99,7 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
             }
         }
 
-        p = &resp[i];
-        *p = *q;
+        static_cast<nixlBasicDesc &>(resp[i]) = query[i];
         resp[i].metadataP = (*base)[s_index].metadataP;
     }
     return NIXL_SUCCESS;
