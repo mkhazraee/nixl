@@ -27,6 +27,7 @@
 #include "agent_data.h"
 #include "plugin_manager.h"
 #include "common/nixl_log.h"
+#include "common/operators.h"
 #include "telemetry.h"
 #include "telemetry_event.h"
 
@@ -123,6 +124,8 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
         useEtcd = false;
         NIXL_DEBUG << "NIXL ETCD is disabled";
     }
+#else
+    NIXL_DEBUG << "NIXL ETCD is excluded";
 #endif // HAVE_ETCD
     if (name.empty())
         throw std::invalid_argument("Agent needs a name");
@@ -134,10 +137,13 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
         if (!strcasecmp(telemetry_env_val, "y") || !strcasecmp(telemetry_env_val, "1") ||
             !strcasecmp(telemetry_env_val, "yes") || !strcasecmp(telemetry_env_val, "on")) {
             telemetry_ = std::make_unique<nixlTelemetry>(name, backendEngines);
-        } else if (strcasecmp(telemetry_env_val, "n") && strcasecmp(telemetry_env_val, "0") &&
-                   strcasecmp(telemetry_env_val, "no") && strcasecmp(telemetry_env_val, "off")) {
+            NIXL_DEBUG << "NIXL telemetry is enabled";
+        } else if (!strcasecmp(telemetry_env_val, "n") || !strcasecmp(telemetry_env_val, "0") ||
+                   !strcasecmp(telemetry_env_val, "no") || !strcasecmp(telemetry_env_val, "off")) {
+            NIXL_DEBUG << "NIXL telemetry is disabled";
+        } else {
             NIXL_WARN
-                << "Invalid NIXL_TELEMETRY_ENABLE environment variable, not enabling telemetry.";
+                << "NIXL telemetry is disabled for invalid NIXL_TELEMETRY_ENABLE environment variable -- valid are 'y', 'yes', '1', 'on', 'n', 'no', '0', 'off', any case.";
         }
     }
 }
@@ -1481,7 +1487,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     ret = sd.getBuf("Conns", &conn_cnt, sizeof(conn_cnt));
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR << "loadRemoteMD: error getting connection count: "
-                   << nixlEnumStrings::statusStr(ret);
+                   << ret;
         return ret;
     }
 
@@ -1498,7 +1504,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
             count++;
         } else if (ret != NIXL_ERR_NOT_SUPPORTED) {
             NIXL_ERROR << "loadRemoteMD: error loading connection info for backend '"
-                       << nixl_backend << "' with status " << nixlEnumStrings::statusStr(ret);
+                       << nixl_backend << "' with status " << ret;
             return ret;
         }
     }
@@ -1513,7 +1519,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     ret = data->loadRemoteSections(remote_agent, sd);
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR << "loadRemoteMD: error loading remote metadata for agent '" << remote_agent
-                   << "' with status " << nixlEnumStrings::statusStr(ret);
+                   << "' with status " << ret;
         return ret;
     }
 
@@ -1553,7 +1559,7 @@ nixlAgent::invalidateRemoteMD(const std::string &remote_agent) {
 
     if (ret != NIXL_SUCCESS)
         NIXL_ERROR << "invalidateRemoteMD: error invalidating remote metadata for agent '"
-                   << remote_agent << "' with status " << nixlEnumStrings::statusStr(ret);
+                   << remote_agent << "' with status " << ret;
     return ret;
 }
 
@@ -1563,7 +1569,7 @@ nixlAgent::sendLocalMD (const nixl_opt_args_t* extra_params) const {
     nixl_status_t ret = getLocalMD(myMD);
     if (ret < 0) {
         NIXL_ERROR << "sendLocalMD: error getting local metadata with status "
-                   << nixlEnumStrings::statusStr(ret);
+                   << ret;
         return ret;
     }
 
@@ -1595,7 +1601,7 @@ nixlAgent::sendLocalPartialMD(const nixl_reg_dlist_t &descs,
     nixl_status_t ret = getLocalPartialMD(descs, myMD, extra_params);
     if (ret < 0) {
         NIXL_ERROR << "sendLocalPartialMD: error getting local partial metadata with status "
-                   << nixlEnumStrings::statusStr(ret);
+                   << ret;
         return ret;
     }
 
