@@ -143,7 +143,8 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             NIXL_DEBUG << "NIXL telemetry is disabled";
         } else {
             NIXL_WARN
-                << "NIXL telemetry is disabled for invalid NIXL_TELEMETRY_ENABLE environment variable -- valid are 'y', 'yes', '1', 'on', 'n', 'no', '0', 'off', any case.";
+                << "NIXL telemetry is disabled for invalid NIXL_TELEMETRY_ENABLE environment "
+                   "variable -- valid are 'y', 'yes', '1', 'on', 'n', 'no', '0', 'off', any case.";
         }
     }
 }
@@ -1486,8 +1487,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     size_t conn_cnt;
     ret = sd.getBuf("Conns", &conn_cnt, sizeof(conn_cnt));
     if (ret != NIXL_SUCCESS) {
-        NIXL_ERROR << "loadRemoteMD: error getting connection count: "
-                   << ret;
+        NIXL_ERROR << "loadRemoteMD: error getting connection count: " << ret;
         return ret;
     }
 
@@ -1568,8 +1568,7 @@ nixlAgent::sendLocalMD (const nixl_opt_args_t* extra_params) const {
     nixl_blob_t myMD;
     nixl_status_t ret = getLocalMD(myMD);
     if (ret < 0) {
-        NIXL_ERROR << "sendLocalMD: error getting local metadata with status "
-                   << ret;
+        NIXL_ERROR << "sendLocalMD: error getting local metadata with status " << ret;
         return ret;
     }
 
