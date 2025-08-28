@@ -1293,7 +1293,7 @@ nixlAgent::genNotif(const std::string &remote_agent,
     }
 
     if (backend_list->empty()) {
-        NIXL_ERROR << "genNotifs: no specified or potential backend supports notifications";
+        NIXL_ERROR << "genNotif: no specified or potential backend supports notifications";
         return NIXL_ERR_BACKEND;
     }
 
@@ -1304,14 +1304,15 @@ nixlAgent::genNotif(const std::string &remote_agent,
             if (eng->supportsLocal()) {
                 ret = eng->genNotif(remote_agent, msg);
                 if (ret < 0) {
-                    NIXL_ERROR << "genNotifs: backend '" << eng->getType()
+                    NIXL_ERROR << "genNotif: backend '" << eng->getType()
                                << "' returned error status " << ret
                                << " while sending intra-agent notifications";
                 }
+                return ret;
             }
         }
         NIXL_ERROR
-            << "getNotifs: no specified or potential backend can send intra-agent notifications";
+            << "genNotif: no specified or potential backend can send intra-agent notifications";
         return NIXL_ERR_NOT_FOUND;
     }
     const auto iter = data->remoteBackends.find(remote_agent);
@@ -1321,14 +1322,17 @@ nixlAgent::genNotif(const std::string &remote_agent,
             if (iter->second.count(eng->getType()) != 0) {
                 ret = eng->genNotif(remote_agent, msg);
                 if (ret < 0) {
-                    NIXL_ERROR << "genNotifs: backend '" << eng->getType()
+                    NIXL_ERROR << "genNotif: backend '" << eng->getType()
                                << "' returned error status " << ret
                                << " while sending notification to agent '" << remote_agent << "'";
                 }
+                return ret;
             }
         }
     }
-    NIXL_ERROR << "getNotifs: no new notifications found for agent '" << remote_agent << "'";
+
+    NIXL_ERROR
+        << "genNotif: no specified or potential backend could send the inter-agent notifications";
     return NIXL_ERR_NOT_FOUND;
 }
 
@@ -1696,7 +1700,7 @@ nixlAgent::checkRemoteMD (const std::string remote_name,
             dummy.clear();
         }
     }
-    NIXL_ERROR << "checkRemoteMD: the requested metadata not found for remove agent '"
-               << remote_name << "'";
+
+    // This is a checker method, returning not found is not an error to be logged
     return NIXL_ERR_NOT_FOUND;
 }
