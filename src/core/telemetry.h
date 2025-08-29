@@ -43,7 +43,7 @@ struct periodicTask {
 
 class nixlTelemetry {
 public:
-    nixlTelemetry(const std::string &name, const std::string &dir_path, backend_map_t &backend_map);
+    nixlTelemetry(const std::string &file_path, backend_map_t &backend_map);
 
     ~nixlTelemetry();
 
@@ -68,7 +68,7 @@ public:
 
 private:
     void
-    initializeTelemetry(const std::string &dir_path);
+    initializeTelemetry();
     void
     registerPeriodicTask(periodicTask &task);
     void

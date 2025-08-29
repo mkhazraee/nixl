@@ -264,13 +264,13 @@ struct nixlXferTelemetry {
     /**
      * @var totalBytes Amount of bytes transferred in the request
      */
-    size_t totalBytes = 0;
+    size_t totalBytes;
 
     /**
      * @var descCount Number of descriptors in the transfer request.
      *      If any merging of descriptors were performed, it will be reflected here.
      */
-    size_t descCount = 0;
+    size_t descCount;
 };
 
 /**

@@ -154,10 +154,9 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             !strcasecmp(telemetry_env_val, "yes") || !strcasecmp(telemetry_env_val, "on")) {
             telemetryEnabled = true;
             if (telemetry_env_dir != nullptr) {
-                telemetry_ = std::make_unique<nixlTelemetry>(
-                    name, std::string(telemetry_env_dir), backendEngines);
-                NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_env_dir
-                           << "/" << name;
+                std::string telemetry_file = std::string(telemetry_env_dir) + "/" + name;
+                telemetry_ = std::make_unique<nixlTelemetry>(telemetry_file, backendEngines);
+                NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_file;
             } else {
                 NIXL_DEBUG << "NIXL telemetry is enabled without an output file";
             }
