@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <chrono>
 #include <thread>
 #include <vector>
 #include <thread>
@@ -34,6 +35,8 @@
 #ifdef HAVE_CUDA
 #include <cuda_runtime.h>
 #endif
+
+constexpr auto min_chrono_time = std::chrono::steady_clock::time_point::min();
 
 namespace gtest {
 
@@ -143,6 +146,9 @@ protected:
 #ifdef HAVE_CUDA
         m_cuda_device = (cudaSetDevice(0) == cudaSuccess);
 #endif
+
+        // Disabling Telemetry until the corresponding test
+        env.addVar("NIXL_TELEMETRY_ENABLE", "n");
 
         // Create two agents
         for (size_t i = 0; i < 2; i++) {
@@ -366,8 +372,7 @@ protected:
                std::vector<MemBuffer> src_buffers,
                nixl_mem_t dst_mem_type,
                std::vector<MemBuffer> dst_buffers,
-               bool test_telemetry = false,
-               nixl_status_t expected_telem_status = NIXL_SUCCESS) {
+               nixl_status_t expected_telem_status = NIXL_ERR_NO_TELEMETRY) {
         std::mutex logger_mutex;
         std::vector<std::thread> threads;
         nixl_notifs_t notif_map;
@@ -416,16 +421,14 @@ protected:
                              << "(" << bandwidth << " GB/s)";
                 }
 
-                if (test_telemetry) {
-                    nixl_xfer_telem_t telemetry;
-                    status = from.getXferTelemetry(xfer_req, telemetry);
-                    EXPECT_EQ(status, expected_telem_status);
-                    if (status == NIXL_SUCCESS) {
-                        EXPECT_TRUE(telemetry.startTime > min_chrono_time);
-                        EXPECT_TRUE(telemetry.postDuration > chrono_period_us_t(0));
-                        EXPECT_TRUE(telemetry.xferDuration > chrono_period_us_t(0));
-                        EXPECT_TRUE(telemetry.xferDuration >= telemetry.postDuration);
-                    }
+                nixl_xfer_telem_t telemetry;
+                status = from.getXferTelemetry(xfer_req, telemetry);
+                EXPECT_EQ(status, expected_telem_status);
+                if (expected_telem_status == NIXL_SUCCESS) {
+                    EXPECT_TRUE(telemetry.startTime > min_chrono_time);
+                    EXPECT_TRUE(telemetry.postDuration > chrono_period_us_t(0));
+                    EXPECT_TRUE(telemetry.xferDuration > chrono_period_us_t(0));
+                    EXPECT_TRUE(telemetry.xferDuration >= telemetry.postDuration);
                 }
 
                 status = from.releaseXferReq(xfer_req);
@@ -451,6 +454,7 @@ protected:
     }
 
     bool m_cuda_device = false;
+    gtest::ScopedEnv env;
 
 private:
     static constexpr uint64_t DEV_ID = 0;
@@ -555,7 +559,6 @@ TEST_P(TestTransfer, ListenerCommSize) {
 }
 
 TEST_P(TestTransfer, GetXferTelemetryFile) {
-    gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "y");
     env.addVar("NIXL_TELEMETRY_DIR", "/tmp/");
 
@@ -582,7 +585,6 @@ TEST_P(TestTransfer, GetXferTelemetryFile) {
                src_buffers,
                DRAM_SEG,
                dst_buffers,
-               true,
                NIXL_SUCCESS);
 
     invalidateMD(2, 3);
@@ -592,7 +594,6 @@ TEST_P(TestTransfer, GetXferTelemetryFile) {
 
 TEST_P(TestTransfer, GetXferTelemetryAPI) {
     // Enable telemetry without file output
-    gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "y");
 
     // Create fresh agents that read the current env var and add them to the fixture
@@ -618,7 +619,6 @@ TEST_P(TestTransfer, GetXferTelemetryAPI) {
                src_buffers,
                DRAM_SEG,
                dst_buffers,
-               true,
                NIXL_SUCCESS);
 
     invalidateMD(2, 3);
@@ -627,7 +627,6 @@ TEST_P(TestTransfer, GetXferTelemetryAPI) {
 }
 
 TEST_P(TestTransfer, GetXferTelemetryDisabled) {
-    gtest::ScopedEnv env;
     env.addVar("NIXL_TELEMETRY_ENABLE", "n");
 
     // Create fresh agents that read the current env var and add them to the fixture
@@ -653,7 +652,6 @@ TEST_P(TestTransfer, GetXferTelemetryDisabled) {
                src_buffers,
                DRAM_SEG,
                dst_buffers,
-               true,
                NIXL_ERR_NO_TELEMETRY);
 
     invalidateMD(2, 3);

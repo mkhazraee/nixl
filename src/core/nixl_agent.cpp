@@ -156,8 +156,8 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             if (telemetry_env_dir != nullptr) {
                 telemetry_ = std::make_unique<nixlTelemetry>(
                     name, std::string(telemetry_env_dir), backendEngines);
-                NIXL_DEBUG << "NIXL telemetry is enabled with output file: "
-                           << telemetry_env_dir << "/" << name;
+                NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_env_dir
+                           << "/" << name;
             } else {
                 NIXL_DEBUG << "NIXL telemetry is enabled without an output file";
             }
@@ -1201,16 +1201,17 @@ nixl_status_t
 nixlAgent::getXferTelemetry(const nixlXferReqH *req_hndl, nixl_xfer_telem_t &telemetry) const {
 
     if (!data->telemetryEnabled) {
-        NIXL_ERROR << "getXferTelemetry cannot return values when telemetry is not enabled.";
+        NIXL_ERROR_FUNC << "cannot return values when telemetry is not enabled.";
         return NIXL_ERR_NO_TELEMETRY;
     }
 
-    if (req_hndl->status < 0) return req_hndl->status;
+    if (req_hndl->status != NIXL_SUCCESS) {
+        NIXL_ERROR_FUNC << "Transfer is not complete yet";
+        return req_hndl->status;
+    }
 
-    // NIXL_SUCCESS or NIXL_IN_PROG, values are initialized
     telemetry = req_hndl->telemetry;
-
-    return req_hndl->status;
+    return NIXL_SUCCESS;
 }
 
 nixl_status_t
