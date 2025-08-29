@@ -42,6 +42,18 @@
 /* ERROR log prefixed with current function name and a colon */
 #define NIXL_ERROR_FUNC NIXL_ERROR << __FUNCTION__ << ": "
 
+#define SERIALIZE_ERR(ret)                         \
+    do {                                           \
+        NIXL_ERROR_FUNC << "serialization failed"; \
+        return ret;                                \
+    } while (0)
+
+#define DESERIALIZE_ERR()                            \
+    do {                                             \
+        NIXL_ERROR_FUNC << "deserialization failed"; \
+        return NIXL_ERR_MISMATCH;                    \
+    } while (0)
+
 const char TELEMETRY_ENABLED_VAR[] = "NIXL_TELEMETRY_ENABLE";
 static const std::vector<std::vector<std::string>> illegal_plugin_combinations = {
     {"GDS", "GDS_MT"},
@@ -1347,31 +1359,27 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
 
     nixlSerDes sd;
     ret = sd.addStr("Agent", data->name);
-    if (ret) goto getLocalMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) goto getLocalMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     for (auto &c : data->connMD) {
         nixl_backend = c.first;
         ret = sd.addStr("t", nixl_backend);
-        if (ret) goto getLocalMDerr;
+        if (ret) SERIALIZE_ERR(ret);
         ret = sd.addStr("c", c.second);
-        if (ret) goto getLocalMDerr;
+        if (ret) SERIALIZE_ERR(ret);
     }
 
     ret = sd.addStr("", "MemSection");
-    if (ret) goto getLocalMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     ret = data->memorySection->serialize(&sd);
-    if (ret) goto getLocalMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     str = sd.exportStr();
     return NIXL_SUCCESS;
-
-getLocalMDerr:
-    NIXL_ERROR_FUNC << "serialization failed";
-    return ret;
 }
 
 nixl_status_t
@@ -1418,19 +1426,19 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
 
     nixlSerDes sd;
     ret = sd.addStr("Agent", data->name);
-    if (ret) goto getLocalPartialMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     // Only add connection info if requested via extra_params or empty dlist
     size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
                       found_iters.size() : 0;
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) goto getLocalPartialMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     for (size_t i = 0; i < conn_cnt; i++) {
         ret = sd.addStr("t", found_iters[i]->first);
-        if (ret) goto getLocalPartialMDerr;
+        if (ret) SERIALIZE_ERR(ret);
         ret = sd.addStr("c", found_iters[i]->second);
-        if (ret) goto getLocalPartialMDerr;
+        if (ret) SERIALIZE_ERR(ret);
     }
 
     if (selected_engines.size() == 0 && descs.descCount() > 0) {
@@ -1439,17 +1447,13 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
     }
 
     ret = sd.addStr("", "MemSection");
-    if (ret) goto getLocalPartialMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     ret = data->memorySection->serializePartial(&sd, selected_engines, descs);
-    if (ret) goto getLocalPartialMDerr;
+    if (ret) SERIALIZE_ERR(ret);
 
     str = sd.exportStr();
     return NIXL_SUCCESS;
-
-getLocalPartialMDerr:
-    NIXL_ERROR_FUNC << "serialization failed";
-    return ret;
 }
 
 nixl_status_t
@@ -1491,10 +1495,10 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     int count = 0;
     for (size_t i = 0; i < conn_cnt; ++i) {
         nixl_backend = sd.getStr("t");
-        if (nixl_backend.empty()) goto loadRemoteMDerr;
+        if (nixl_backend.empty()) DESERIALIZE_ERR();
 
         conn_info = sd.getStr("c");
-        if (conn_info.empty()) goto loadRemoteMDerr;
+        if (conn_info.empty()) DESERIALIZE_ERR();
 
         ret = data->loadConnInfo(remote_agent, nixl_backend, conn_info);
         if (ret == NIXL_SUCCESS) {
@@ -1511,7 +1515,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
         return NIXL_ERR_BACKEND;
     }
 
-    if (sd.getStr("") != "MemSection") goto loadRemoteMDerr;
+    if (sd.getStr("") != "MemSection") DESERIALIZE_ERR();
 
     ret = data->loadRemoteSections(remote_agent, sd);
     if (ret != NIXL_SUCCESS) {
@@ -1522,10 +1526,6 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
 
     agent_name = remote_agent;
     return NIXL_SUCCESS;
-
-loadRemoteMDerr:
-    NIXL_ERROR_FUNC << "deserialization failed";
-    return NIXL_ERR_MISMATCH;
 }
 
 nixl_status_t
