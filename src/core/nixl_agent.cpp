@@ -31,21 +31,6 @@
 #include "telemetry.h"
 #include "telemetry_event.h"
 
-/* ERROR log prefixed with current function name and a colon */
-#define NIXL_ERROR_FUNC NIXL_ERROR << __FUNCTION__ << ": "
-
-#define SERIALIZE_ERR(ret)                         \
-    do {                                           \
-        NIXL_ERROR_FUNC << "serialization failed"; \
-        return ret;                                \
-    } while (0)
-
-#define DESERIALIZE_ERR()                            \
-    do {                                             \
-        NIXL_ERROR_FUNC << "deserialization failed"; \
-        return NIXL_ERR_MISMATCH;                    \
-    } while (0)
-
 constexpr char TELEMETRY_ENABLED_VAR[] = "NIXL_TELEMETRY_ENABLE";
 constexpr char TELEMETRY_DIR_VAR[] = "NIXL_TELEMETRY_DIR";
 static const std::vector<std::vector<std::string>> illegal_plugin_combinations = {
@@ -1409,24 +1394,27 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
 
     nixlSerDes sd;
     ret = sd.addStr("Agent", data->name);
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     for (auto &c : data->connMD) {
         nixl_backend = c.first;
         ret = sd.addStr("t", nixl_backend);
-        if (ret) SERIALIZE_ERR(ret);
+        if (ret) return ret; // serdes class logs errors if necessary
         ret = sd.addStr("c", c.second);
-        if (ret) SERIALIZE_ERR(ret);
+        if (ret) return ret; // serdes class logs errors if necessary
     }
 
     ret = sd.addStr("", "MemSection");
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     ret = data->memorySection->serialize(&sd);
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) {
+        NIXL_ERROR_FUNC << "serialization failed";
+        return ret;
+    }
 
     str = sd.exportStr();
     return NIXL_SUCCESS;
@@ -1476,19 +1464,19 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
 
     nixlSerDes sd;
     ret = sd.addStr("Agent", data->name);
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     // Only add connection info if requested via extra_params or empty dlist
     size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
                       found_iters.size() : 0;
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     for (size_t i = 0; i < conn_cnt; i++) {
         ret = sd.addStr("t", found_iters[i]->first);
-        if (ret) SERIALIZE_ERR(ret);
+        if (ret) return ret; // serdes class logs errors if necessary
         ret = sd.addStr("c", found_iters[i]->second);
-        if (ret) SERIALIZE_ERR(ret);
+        if (ret) return ret; // serdes class logs errors if necessary
     }
 
     if (selected_engines.size() == 0 && descs.descCount() > 0) {
@@ -1497,10 +1485,13 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
     }
 
     ret = sd.addStr("", "MemSection");
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) return ret; // serdes class logs errors if necessary
 
     ret = data->memorySection->serializePartial(&sd, selected_engines, descs);
-    if (ret) SERIALIZE_ERR(ret);
+    if (ret) {
+        NIXL_ERROR_FUNC << "serialization failed";
+        return ret;
+    }
 
     str = sd.exportStr();
     return NIXL_SUCCESS;
@@ -1545,10 +1536,10 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     int count = 0;
     for (size_t i = 0; i < conn_cnt; ++i) {
         nixl_backend = sd.getStr("t");
-        if (nixl_backend.empty()) DESERIALIZE_ERR();
+        if (nixl_backend.empty()) return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
 
         conn_info = sd.getStr("c");
-        if (conn_info.empty()) DESERIALIZE_ERR();
+        if (conn_info.empty()) return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
 
         ret = data->loadConnInfo(remote_agent, nixl_backend, conn_info);
         if (ret == NIXL_SUCCESS) {
@@ -1565,7 +1556,8 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
         return NIXL_ERR_BACKEND;
     }
 
-    if (sd.getStr("") != "MemSection") DESERIALIZE_ERR();
+    if (sd.getStr("") != "MemSection")
+        return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
 
     ret = data->loadRemoteSections(remote_agent, sd);
     if (ret != NIXL_SUCCESS) {
