@@ -31,12 +31,6 @@
 #include "telemetry.h"
 #include "telemetry_event.h"
 
-// Macro to safely call telemetry methods only if telemetry_ is not null
-#define ADD_ERR_TELEMETRY(status)                                         \
-    do {                                                                  \
-        if (data->telemetry_) data->telemetry_->updateErrorCount(status); \
-    } while (0)
-
 /* ERROR log prefixed with current function name and a colon */
 #define NIXL_ERROR_FUNC NIXL_ERROR << __FUNCTION__ << ": "
 
@@ -602,7 +596,7 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
     // just we can add a call to fetchRemoteMD for next time
     if (!init_side && (data->remoteSections.count(agent_name) == 0)) {
         NIXL_ERROR_FUNC << "metadata for remote agent '" << agent_name << "' not found";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
 
@@ -616,7 +610,7 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
 
         if (!backend_set || backend_set->empty()) {
             NIXL_ERROR_FUNC << "no available backends for mem type '" << descs.getType() << "'";
-            ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+            data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
             return NIXL_ERR_NOT_FOUND;
         }
     } else {
@@ -663,7 +657,7 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
         NIXL_ERROR_FUNC << "failed to prepare the descriptors for any of "
                            "the specified or potential backends for agent '"
                         << agent_name << "'";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     } else {
         dlist_hndl = handle;
@@ -689,13 +683,13 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     if (!local_side || !remote_side) {
         NIXL_ERROR_FUNC << "local or remote side handle is null";
-        ADD_ERR_TELEMETRY(NIXL_ERR_INVALID_PARAM);
+        data->addErrorTelemetry(NIXL_ERR_INVALID_PARAM);
         return NIXL_ERR_INVALID_PARAM;
     }
 
     if ((!local_side->isLocal) || (remote_side->isLocal)) {
         NIXL_ERROR_FUNC << "invalid sides (local must be local, remote must be remote)";
-        ADD_ERR_TELEMETRY(NIXL_ERR_INVALID_PARAM);
+        data->addErrorTelemetry(NIXL_ERR_INVALID_PARAM);
         return NIXL_ERR_INVALID_PARAM;
     }
 
@@ -704,7 +698,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
     if (data->remoteSections.count(remote_side->remoteAgent) == 0) {
         NIXL_ERROR_FUNC << "remote agent '" << remote_side->remoteAgent
                         << "' was invalidated in between prepXferDlist and this call";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         delete req_hndl;
         return NIXL_ERR_NOT_FOUND;
     }
@@ -854,7 +848,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "backend '" << backend->getType()
                         << "' failed to prepare the transfer request with status " << ret;
-        ADD_ERR_TELEMETRY(ret);
+        data->addErrorTelemetry(ret);
         return ret;
     }
 
@@ -880,7 +874,7 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     if (data->remoteSections.count(remote_agent) == 0)
     {
         NIXL_ERROR_FUNC << "metadata for remote agent '" << remote_agent << "' not found";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
 
@@ -958,7 +952,7 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     if (!handle->engine) {
         NIXL_ERROR_FUNC << "no specified or potential backend had the required "
                            "registrations to be able to do the transfer";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
 
@@ -975,7 +969,7 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     if (opt_args.hasNotif && (!handle->engine->supportsNotif())) {
         NIXL_ERROR_FUNC << "the selected backend '" << handle->engine->getType()
                         << "' does not support notifications";
-        ADD_ERR_TELEMETRY(NIXL_ERR_BACKEND);
+        data->addErrorTelemetry(NIXL_ERR_BACKEND);
         return NIXL_ERR_BACKEND;
     }
 
@@ -999,7 +993,7 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     if (ret1 != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "backend '" << handle->engine->getType()
                         << "' failed to prepare the transfer request with status " << ret1;
-        ADD_ERR_TELEMETRY(ret1);
+        data->addErrorTelemetry(ret1);
         return ret1;
     }
 
@@ -1023,13 +1017,13 @@ nixlAgent::estimateXferCost(const nixlXferReqH *req_hndl,
         (data->remoteSections.count(req_hndl->remoteAgent) == 0)) {
         NIXL_ERROR_FUNC << "invalid request handle, remote agent was invalidated "
                            "after transfer request creation";
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
 
     if (!req_hndl->engine) {
         NIXL_ERROR_FUNC << "invalid request handle: engine is null";
-        ADD_ERR_TELEMETRY(NIXL_ERR_UNKNOWN);
+        data->addErrorTelemetry(NIXL_ERR_UNKNOWN);
         return NIXL_ERR_UNKNOWN;
     }
 
@@ -1058,7 +1052,7 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
 
     if (!req_hndl) {
         NIXL_ERROR_FUNC << "transfer request handle is null";
-        ADD_ERR_TELEMETRY(NIXL_ERR_INVALID_PARAM);
+        data->addErrorTelemetry(NIXL_ERR_INVALID_PARAM);
         return NIXL_ERR_INVALID_PARAM;
     }
 
@@ -1072,7 +1066,7 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
         NIXL_ERROR_FUNC << "remote agent '" << req_hndl->remoteAgent
                         << "' was invalidated after transfer request creation";
         delete req_hndl;
-        ADD_ERR_TELEMETRY(NIXL_ERR_NOT_FOUND);
+        data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
 
@@ -1118,7 +1112,7 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
         NIXL_ERROR_FUNC << "the selected backend '" << req_hndl->engine->getType()
                         << "' does not support notifications";
         delete req_hndl;
-        ADD_ERR_TELEMETRY(NIXL_ERR_BACKEND);
+        data->addErrorTelemetry(NIXL_ERR_BACKEND);
         return NIXL_ERR_BACKEND;
     }
 
@@ -1146,7 +1140,7 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
 
     if (data->telemetryEnabled) {
         if (req_hndl->status < 0) {
-            ADD_ERR_TELEMETRY(req_hndl->status);
+            data->addErrorTelemetry(req_hndl->status);
         } else if (req_hndl->status == NIXL_IN_PROG) {
             req_hndl->updateRequestStats(data->telemetry_, NIXL_TELEMETRY_POST);
         } else {
@@ -1187,7 +1181,7 @@ nixlAgent::getXferStatus (nixlXferReqH *req_hndl) const {
             if (req_hndl->status == NIXL_SUCCESS) {
                 req_hndl->updateRequestStats(data->telemetry_, NIXL_TELEMETRY_FINISH);
             } else if (req_hndl->status < 0) {
-                ADD_ERR_TELEMETRY(req_hndl->status);
+                data->addErrorTelemetry(req_hndl->status);
             }
         }
     }
