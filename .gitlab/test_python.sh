@@ -80,7 +80,7 @@ python3 query_mem_example.py
 
 # Running telemetry for the last test
 blocking_send_recv_port=$(get_next_tcp_port)
-mkdir /tmp/telemetry_test
+mkdir -p /tmp/telemetry_test
 
 python3 blocking_send_recv_example.py --mode="target" --ip=127.0.0.1 --port="$blocking_send_recv_port"&
 sleep 5

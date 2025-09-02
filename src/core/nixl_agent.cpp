@@ -1247,12 +1247,12 @@ nixlAgent::releaseXferReq(nixlXferReqH *req_hndl) const {
 nixl_status_t
 nixlAgent::createGpuXferReq(const nixlXferReqH &req_hndl, nixlGpuXferReqH *&gpu_req_hndl) const {
     if (!req_hndl.engine) {
-        NIXL_ERROR << "Invalid request handle[" << &req_hndl << "]: engine is null";
+        NIXL_ERROR_FUNC << "Invalid request handle[" << &req_hndl << "]: engine is null";
         return NIXL_ERR_INVALID_PARAM;
     }
 
     if (!req_hndl.backendHandle) {
-        NIXL_ERROR << "Invalid request handle[" << &req_hndl << "]: backendHandle is null";
+        NIXL_ERROR_FUNC << "Invalid request handle[" << &req_hndl << "]: backendHandle is null";
         return NIXL_ERR_INVALID_PARAM;
     }
 

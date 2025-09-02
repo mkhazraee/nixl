@@ -630,7 +630,7 @@ class nixl_agent:
     def get_xfer_telemetry(
         self, handle: nixl_xfer_handle
     ) -> nixlBind.nixlXferTelemetry:
-        return self.agent.getXferTelemetry(handle)
+        return self.agent.getXferTelemetry(handle._handle)
 
     """
     @brief Query the backend that was chosen for a transfer operation.
