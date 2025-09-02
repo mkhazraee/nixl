@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 #include <map>
-#include <cassert>
 #include <algorithm>
 #include <iostream>
 #include "nixl.h"
@@ -50,7 +49,6 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
         return NIXL_ERR_NOT_FOUND;
 
     nixl_sec_dlist_t* base = it->second;
-    // assert(base->verifySorted());
     resp.resize(query.descCount());
 
     int size = base->descCount();
