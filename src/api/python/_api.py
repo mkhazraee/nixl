@@ -137,6 +137,7 @@ class nixl_agent_config:
         enable_prog_thread: bool = True,
         enable_listen_thread: bool = False,
         listen_port: int = 0,
+        capture_telemetry: bool = False,
         num_threads: int = 0,
         backends: list[str] = ["UCX"],
     ):
@@ -145,6 +146,7 @@ class nixl_agent_config:
         self.enable_pthread = enable_prog_thread
         self.enable_listen = enable_listen_thread
         self.port = listen_port
+        self.capture_telemetry = capture_telemetry
         self.num_threads = num_threads
 
 
@@ -186,6 +188,7 @@ class nixl_agent:
             nixl_conf.enable_listen,
             nixl_conf.port,
             thread_config,
+            nixl_conf.capture_telemetry,
         )
         self.agent = nixlBind.nixlAgent(agent_name, agent_config)
 

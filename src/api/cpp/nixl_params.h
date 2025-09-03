@@ -37,6 +37,8 @@ class nixlAgentConfig {
         int      listenPort;
         /** @var synchronization mode for multi-threaded environment execution */
         nixl_thread_sync_t syncMode;
+        /** @var Capture telemetry info regardless of environment variables*/
+        bool captureTelemetry;
 
     public:
 
@@ -63,19 +65,21 @@ class nixlAgentConfig {
          * @param pthr_delay_us      Optional delay for pthread in us
          * @param lthr_delay_us      Optional delay for listener thread in us
          */
-        nixlAgentConfig (const bool use_prog_thread,
-                         const bool use_listen_thread=false,
-                         const int port=0,
-                         nixl_thread_sync_t sync_mode=nixl_thread_sync_t::NIXL_THREAD_SYNC_DEFAULT,
-                         unsigned int num_workers = 1,
-                         const uint64_t pthr_delay_us=0,
-                         const uint64_t lthr_delay_us = 100000) :
-                         useProgThread(use_prog_thread),
-                         useListenThread(use_listen_thread),
-                         listenPort(port),
-                         syncMode(sync_mode),
-                         pthrDelay(pthr_delay_us),
-                         lthrDelay(lthr_delay_us) { }
+        nixlAgentConfig(const bool use_prog_thread,
+                        const bool use_listen_thread = false,
+                        const int port = 0,
+                        nixl_thread_sync_t sync_mode = nixl_thread_sync_t::NIXL_THREAD_SYNC_DEFAULT,
+                        const bool capture_telemetry = false,
+                        unsigned int num_workers = 1,
+                        const uint64_t pthr_delay_us = 0,
+                        const uint64_t lthr_delay_us = 100000)
+            : useProgThread(use_prog_thread),
+              useListenThread(use_listen_thread),
+              listenPort(port),
+              syncMode(sync_mode),
+              captureTelemetry(capture_telemetry),
+              pthrDelay(pthr_delay_us),
+              lthrDelay(lthr_delay_us) {}
 
         /**
          * @brief Copy constructor for nixlAgentConfig object
