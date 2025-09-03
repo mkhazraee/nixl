@@ -1394,21 +1394,22 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
 
     nixlSerDes sd;
     ret = sd.addStr("Agent", data->name);
-    if (ret) return ret; // serdes class logs errors if necessary
+    // Always returns SUCCESS, serdes class logs errors if necessary
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) return ret; // serdes class logs errors if necessary
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     for (auto &c : data->connMD) {
         nixl_backend = c.first;
         ret = sd.addStr("t", nixl_backend);
-        if (ret) return ret; // serdes class logs errors if necessary
+        if (ret) return NIXL_ERR_UNKNOWN;
         ret = sd.addStr("c", c.second);
-        if (ret) return ret; // serdes class logs errors if necessary
+        if (ret) return NIXL_ERR_UNKNOWN;
     }
 
     ret = sd.addStr("", "MemSection");
-    if (ret) return ret; // serdes class logs errors if necessary
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     ret = data->memorySection->serialize(&sd);
     if (ret) {
@@ -1462,30 +1463,31 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
         selected_engines.insert(backend);
     }
 
-    nixlSerDes sd;
-    ret = sd.addStr("Agent", data->name);
-    if (ret) return ret; // serdes class logs errors if necessary
-
-    // Only add connection info if requested via extra_params or empty dlist
-    size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
-                      found_iters.size() : 0;
-    ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if (ret) return ret; // serdes class logs errors if necessary
-
-    for (size_t i = 0; i < conn_cnt; i++) {
-        ret = sd.addStr("t", found_iters[i]->first);
-        if (ret) return ret; // serdes class logs errors if necessary
-        ret = sd.addStr("c", found_iters[i]->second);
-        if (ret) return ret; // serdes class logs errors if necessary
-    }
-
     if (selected_engines.size() == 0 && descs.descCount() > 0) {
         NIXL_ERROR_FUNC << "no backends support the requested descriptors";
         return NIXL_ERR_BACKEND;
     }
 
+    nixlSerDes sd;
+    ret = sd.addStr("Agent", data->name);
+    // Always returns SUCCESS, serdes class logs errors if necessary
+    if (ret) return NIXL_ERR_UNKNOWN;
+
+    // Only add connection info if requested via extra_params or empty dlist
+    size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
+                      found_iters.size() : 0;
+    ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
+    if (ret) return NIXL_ERR_UNKNOWN;
+
+    for (size_t i = 0; i < conn_cnt; i++) {
+        ret = sd.addStr("t", found_iters[i]->first);
+        if (ret) return NIXL_ERR_UNKNOWN;
+        ret = sd.addStr("c", found_iters[i]->second);
+        if (ret) return NIXL_ERR_UNKNOWN;
+    }
+
     ret = sd.addStr("", "MemSection");
-    if (ret) return ret; // serdes class logs errors if necessary
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     ret = data->memorySection->serializePartial(&sd, selected_engines, descs);
     if (ret) {
@@ -1509,7 +1511,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     ret = sd.importStr(remote_metadata);
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
-        return ret;
+        return NIXL_ERR_MISMATCH;
     }
 
     std::string remote_agent = sd.getStr("Agent");
@@ -1530,16 +1532,22 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     ret = sd.getBuf("Conns", &conn_cnt, sizeof(conn_cnt));
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "error getting connection count: " << ret;
-        return ret;
+        return NIXL_ERR_MISMATCH;
     }
 
     int count = 0;
     for (size_t i = 0; i < conn_cnt; ++i) {
         nixl_backend = sd.getStr("t");
-        if (nixl_backend.empty()) return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
+        if (nixl_backend.empty()) {
+            NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
+            return NIXL_ERR_MISMATCH;
+        }
 
         conn_info = sd.getStr("c");
-        if (conn_info.empty()) return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
+        if (conn_info.empty()) {
+            NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
+            return NIXL_ERR_MISMATCH;
+        }
 
         ret = data->loadConnInfo(remote_agent, nixl_backend, conn_info);
         if (ret == NIXL_SUCCESS) {
@@ -1556,8 +1564,10 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
         return NIXL_ERR_BACKEND;
     }
 
-    if (sd.getStr("") != "MemSection")
-        return NIXL_ERR_MISMATCH; // serdes class logs errors if necessary
+    if (sd.getStr("") != "MemSection") {
+        NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
+        return NIXL_ERR_MISMATCH;
+    }
 
     ret = data->loadRemoteSections(remote_agent, sd);
     if (ret != NIXL_SUCCESS) {
