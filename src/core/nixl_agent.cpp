@@ -1403,10 +1403,11 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
     for (auto &c : data->connMD) {
         nixl_backend = c.first;
         ret = sd.addStr("t", nixl_backend);
-        if (ret) return NIXL_ERR_UNKNOWN;
+        if (ret) break;
         ret = sd.addStr("c", c.second);
-        if (ret) return NIXL_ERR_UNKNOWN;
+        if (ret) break;
     }
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     ret = sd.addStr("", "MemSection");
     if (ret) return NIXL_ERR_UNKNOWN;
@@ -1481,10 +1482,11 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
 
     for (size_t i = 0; i < conn_cnt; i++) {
         ret = sd.addStr("t", found_iters[i]->first);
-        if (ret) return NIXL_ERR_UNKNOWN;
+        if (ret) break;
         ret = sd.addStr("c", found_iters[i]->second);
-        if (ret) return NIXL_ERR_UNKNOWN;
+        if (ret) break;
     }
+    if (ret) return NIXL_ERR_UNKNOWN;
 
     ret = sd.addStr("", "MemSection");
     if (ret) return NIXL_ERR_UNKNOWN;
@@ -1538,13 +1540,9 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     int count = 0;
     for (size_t i = 0; i < conn_cnt; ++i) {
         nixl_backend = sd.getStr("t");
-        if (nixl_backend.empty()) {
-            NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
-            return NIXL_ERR_MISMATCH;
-        }
-
         conn_info = sd.getStr("c");
-        if (conn_info.empty()) {
+
+        if (nixl_backend.empty() || conn_info.empty()) {
             NIXL_ERROR_FUNC << "failed to deserialize remote metadata";
             return NIXL_ERR_MISMATCH;
         }

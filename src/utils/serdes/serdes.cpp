@@ -96,7 +96,7 @@ ssize_t nixlSerDes::getBufLen(const std::string &tag) const{
     //_stringToBytes(&len, workingStr.data() + des_offset + tag.size(), sizeof(ssize_t));
     _stringToBytes(&len, workingStr.substr(des_offset + tag.size(), sizeof(ssize_t)), sizeof(ssize_t));
 
-    if (len == 0) NIXL_WARN << "In deserialization of tag " << tag << " the length of buffer is 0";
+    // if (len == 0) NIXL_WARN << "In deserialization of tag " << tag << " the buffer length ios 0";
 
     return len;
 }
