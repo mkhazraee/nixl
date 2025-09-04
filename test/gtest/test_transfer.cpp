@@ -106,10 +106,10 @@ protected:
                                listen_port > 0,
                                listen_port,
                                nixl_thread_sync_t::NIXL_THREAD_SYNC_RW,
-                               capture_telemetry,
                                1,
                                0,
-                               100000);
+                               100000,
+                               capture_telemetry);
     }
 
     uint16_t

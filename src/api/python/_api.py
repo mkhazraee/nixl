@@ -124,7 +124,8 @@ nixl_backend_handle = int
 @param enable_prog_thread Whether to enable the progress thread, if available.
 @param enable_listen_thread Whether to enable the listener thread for metadata communication.
 @param listen_port Specify the port for the listener thread to listen on.
-
+@param capture_telemetry Whether to enable telemetry capture.
+@param num_threads Specify number of threads for the supported multi-threaded backends.
 @param backends List of backend names for agent to initialize.
         Default is UCX, other backends can be added to the list, or after
         agent creation, can be initialized with create_backend.
@@ -188,6 +189,9 @@ class nixl_agent:
             nixl_conf.enable_listen,
             nixl_conf.port,
             thread_config,
+            1,
+            0,
+            100000,
             nixl_conf.capture_telemetry,
         )
         self.agent = nixlBind.nixlAgent(agent_name, agent_config)
