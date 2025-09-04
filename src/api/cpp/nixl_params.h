@@ -60,7 +60,7 @@ class nixlAgentConfig {
          * @param use_prog_thread    flag to determine use of progress thread
          * @param use_listen_thread  Optional flag to determine use of listener thread
          * @param port               Optional port for listener thread to listen on
-         * @param sync_mode          OptionalThread synchronization mode
+         * @param sync_mode          Optional Thread synchronization mode
          * @param num_workers        Optional number of shared workers per backend
          * @param pthr_delay_us      Optional delay for pthread in us
          * @param lthr_delay_us      Optional delay for listener thread in us
