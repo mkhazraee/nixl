@@ -154,15 +154,13 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             } else {
                 NIXL_DEBUG << "NIXL telemetry is enabled without an output file";
             }
+        } else if (cfg.captureTelemetry) {
+            telemetryEnabled = true;
+            NIXL_WARN << "NIXL telemetry is enabled through config, "
+                         "ignoring the NIXL_TELEMETRY_ENABLE environment variable";
         } else if (!strcasecmp(telemetry_env_val, "n") || !strcasecmp(telemetry_env_val, "0") ||
                    !strcasecmp(telemetry_env_val, "no") || !strcasecmp(telemetry_env_val, "off")) {
-            if (cfg.captureTelemetry) {
-                telemetryEnabled = true;
-                NIXL_WARN << "NIXL telemetry is enabled through config, "
-                             "ignoring the NIXL_TELEMETRY_ENABLE environment variable";
-            } else {
-                NIXL_DEBUG << "NIXL telemetry is disabled";
-            }
+            NIXL_DEBUG << "NIXL telemetry is disabled";
         } else {
             NIXL_WARN
                 << "NIXL telemetry is disabled for invalid NIXL_TELEMETRY_ENABLE environment "
