@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+# import os
 import uuid
 
 import pytest
@@ -308,3 +308,4 @@ def test_get_xfer_telemetry_cfg():
         utils.free_passthru(addr2)
         os.environ.pop("NIXL_TELEMETRY_ENABLE")
         os.environ.pop("NIXL_TELEMETRY_DIR")
+
