@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# import os
+import os
 import uuid
 
 import pytest
@@ -25,6 +25,12 @@ from nixl._api import nixl_agent, nixl_agent_config
 
 # NIXL pytest fixtures
 
+
+@pytest.fixture(autouse=True)
+def isolate_env(monkeypatch):
+    for k in list(os.environ):
+        if k.startswith('NIXL'):
+            monkeypatch.delenv(k, raising=False)
 
 @pytest.fixture()
 def one_empty_agent():
