@@ -24,7 +24,7 @@
 #include <algorithm>
 
 #include "common/nixl_log.h"
-#include "telemetry.h"
+#include "telemetry_writer.h"
 #include "telemetry_event.h"
 #include "util.h"
 
@@ -34,7 +34,7 @@ namespace fs = std::filesystem;
 constexpr std::chrono::milliseconds DEFAULT_TELEMETRY_RUN_INTERVAL = 100ms;
 constexpr size_t DEFAULT_TELEMETRY_BUFFER_SIZE = 4096;
 
-nixlTelemetry::nixlTelemetry(const std::string &file_path, backend_map_t &backend_map)
+nixlTelemetryWriter::nixlTelemetryWriter(const std::string &file_path, backend_map_t &backend_map)
     : pool_(1),
       writeTask_(pool_.get_executor(), DEFAULT_TELEMETRY_RUN_INTERVAL, false),
       file_(file_path),
@@ -42,10 +42,10 @@ nixlTelemetry::nixlTelemetry(const std::string &file_path, backend_map_t &backen
     if (file_path.empty()) {
         throw std::invalid_argument("Telemetry file path cannot be empty");
     }
-    initializeTelemetry();
+    initializeTelemetryWriter();
 }
 
-nixlTelemetry::~nixlTelemetry() {
+nixlTelemetryWriter::~nixlTelemetryWriter() {
     writeTask_.enabled_ = false;
     try {
         writeTask_.timer_.cancel();
@@ -64,7 +64,7 @@ nixlTelemetry::~nixlTelemetry() {
 }
 
 void
-nixlTelemetry::initializeTelemetry() {
+nixlTelemetryWriter::initializeTelemetryWriter() {
     auto buffer_size = std::getenv(TELEMETRY_BUFFER_SIZE_VAR) ?
         std::stoul(std::getenv(TELEMETRY_BUFFER_SIZE_VAR)) :
         DEFAULT_TELEMETRY_BUFFER_SIZE;
@@ -93,7 +93,7 @@ nixlTelemetry::initializeTelemetry() {
 }
 
 bool
-nixlTelemetry::writeEventHelper() {
+nixlTelemetryWriter::writeEventHelper() {
     std::vector<nixlTelemetryEvent> next_queue;
     // assume next buffer will be the same size as the current one
     next_queue.reserve(buffer_->capacity());
@@ -128,7 +128,7 @@ nixlTelemetry::writeEventHelper() {
 }
 
 void
-nixlTelemetry::registerPeriodicTask(periodicTask &task) {
+nixlTelemetryWriter::registerPeriodicTask(periodicTask &task) {
     task.timer_.expires_after(task.interval_);
     task.timer_.async_wait([this, &task](const asio::error_code &ec) {
         if (ec != asio::error::operation_aborted) {
@@ -145,7 +145,7 @@ nixlTelemetry::registerPeriodicTask(periodicTask &task) {
 }
 
 void
-nixlTelemetry::updateData(const std::string &event_name,
+nixlTelemetryWriter::updateData(const std::string &event_name,
                           nixl_telemetry_category_t category,
                           uint64_t value) {
     // agent can be multi-threaded
@@ -160,51 +160,51 @@ nixlTelemetry::updateData(const std::string &event_name,
 
 // The next 4 methods might be removed, as addXferTime covers them.
 void
-nixlTelemetry::updateTxBytes(uint64_t tx_bytes) {
+nixlTelemetryWriter::updateTxBytes(uint64_t tx_bytes) {
     updateData("agent_tx_bytes", nixl_telemetry_category_t::NIXL_TELEMETRY_TRANSFER, tx_bytes);
 }
 
 void
-nixlTelemetry::updateRxBytes(uint64_t rx_bytes) {
+nixlTelemetryWriter::updateRxBytes(uint64_t rx_bytes) {
     updateData("agent_rx_bytes", nixl_telemetry_category_t::NIXL_TELEMETRY_TRANSFER, rx_bytes);
 }
 
 void
-nixlTelemetry::updateTxRequestsNum(uint32_t tx_requests_num) {
+nixlTelemetryWriter::updateTxRequestsNum(uint32_t tx_requests_num) {
     updateData("agent_tx_requests_num",
                nixl_telemetry_category_t::NIXL_TELEMETRY_TRANSFER,
                tx_requests_num);
 }
 
 void
-nixlTelemetry::updateRxRequestsNum(uint32_t rx_requests_num) {
+nixlTelemetryWriter::updateRxRequestsNum(uint32_t rx_requests_num) {
     updateData("agent_rx_requests_num",
                nixl_telemetry_category_t::NIXL_TELEMETRY_TRANSFER,
                rx_requests_num);
 }
 
 void
-nixlTelemetry::updateErrorCount(nixl_status_t error_type) {
+nixlTelemetryWriter::updateErrorCount(nixl_status_t error_type) {
     updateData(
         nixlEnumStrings::statusStr(error_type), nixl_telemetry_category_t::NIXL_TELEMETRY_ERROR, 1);
 }
 
 void
-nixlTelemetry::updateMemoryRegistered(uint64_t memory_registered) {
+nixlTelemetryWriter::updateMemoryRegistered(uint64_t memory_registered) {
     updateData("agent_memory_registered",
                nixl_telemetry_category_t::NIXL_TELEMETRY_MEMORY,
                memory_registered);
 }
 
 void
-nixlTelemetry::updateMemoryDeregistered(uint64_t memory_deregistered) {
+nixlTelemetryWriter::updateMemoryDeregistered(uint64_t memory_deregistered) {
     updateData("agent_memory_deregistered",
                nixl_telemetry_category_t::NIXL_TELEMETRY_MEMORY,
                memory_deregistered);
 }
 
 void
-nixlTelemetry::addXferTime(std::chrono::microseconds xfer_time, bool is_write, uint64_t bytes) {
+nixlTelemetryWriter::addXferTime(std::chrono::microseconds xfer_time, bool is_write, uint64_t bytes) {
     std::string bytes_name;
     std::string requests_name;
 
@@ -230,7 +230,7 @@ nixlTelemetry::addXferTime(std::chrono::microseconds xfer_time, bool is_write, u
 }
 
 void
-nixlTelemetry::addPostTime(std::chrono::microseconds post_time) {
+nixlTelemetryWriter::addPostTime(std::chrono::microseconds post_time) {
     updateData("agent_xfer_post_time",
                nixl_telemetry_category_t::NIXL_TELEMETRY_PERFORMANCE,
                post_time.count());

@@ -19,7 +19,7 @@
 
 #include "common/str_tools.h"
 #include "mem_section.h"
-#include "telemetry.h"
+#include "telemetry_writer.h"
 #include "stream/metadata_stream.h"
 #include "sync.h"
 
@@ -98,7 +98,7 @@ class nixlAgentData {
         std::mutex                         commLock;
         bool                               commThreadStop;
         bool                               useEtcd;
-        std::unique_ptr<nixlTelemetry> telemetry_;
+        std::unique_ptr<nixlTelemetryWriter> telemetry_;
         void commWorker(nixlAgent* myAgent);
         void enqueueCommWork(nixl_comm_req_t request);
         void getCommWork(std::vector<nixl_comm_req_t> &req_list);

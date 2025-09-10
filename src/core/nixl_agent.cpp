@@ -28,7 +28,7 @@
 #include "plugin_manager.h"
 #include "common/nixl_log.h"
 #include "common/operators.h"
-#include "telemetry.h"
+#include "telemetry_writer.h"
 #include "telemetry_event.h"
 
 constexpr char TELEMETRY_ENABLED_VAR[] = "NIXL_TELEMETRY_ENABLE";
@@ -78,7 +78,7 @@ nixlEnumStrings::statusStr(const nixl_status_t &status) {
 }
 
 inline void
-nixlXferReqH::updateRequestStats(std::unique_ptr<nixlTelemetry> &telemetry_pub,
+nixlXferReqH::updateRequestStats(std::unique_ptr<nixlTelemetryWriter> &telemetry_pub,
                                  nixl_telemetry_stat_status_t stat_status) {
 
     static const std::array<std::string, 3> nixl_post_status_str = {
@@ -134,7 +134,7 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             telemetryEnabled = true;
             if (telemetry_env_dir != nullptr) {
                 std::string telemetry_file = std::string(telemetry_env_dir) + "/" + name;
-                telemetry_ = std::make_unique<nixlTelemetry>(telemetry_file, backendEngines);
+                telemetry_ = std::make_unique<nixlTelemetryWriter>(telemetry_file, backendEngines);
                 NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_file;
             } else {
                 NIXL_DEBUG << "NIXL telemetry is enabled without an output file";

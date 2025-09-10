@@ -23,7 +23,7 @@
 
 #include "nixl_types.h"
 #include "backend_engine.h"
-#include "telemetry.h"
+#include "telemetry_writer.h"
 
 enum nixl_telemetry_stat_status_t {
     NIXL_TELEMETRY_POST = 0,
@@ -62,7 +62,7 @@ class nixlXferReqH {
         }
 
         void
-        updateRequestStats(std::unique_ptr<nixlTelemetry> &telemetry,
+        updateRequestStats(std::unique_ptr<nixlTelemetryWriter> &telemetry,
                            nixl_telemetry_stat_status_t stat_status);
 
         friend class nixlAgent;

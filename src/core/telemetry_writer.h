@@ -47,11 +47,11 @@ struct periodicTask {
           enabled_(enabled) {}
 };
 
-class nixlTelemetry {
+class nixlTelemetryWriter {
 public:
-    nixlTelemetry(const std::string &file_path, backend_map_t &backend_map);
+    nixlTelemetryWriter(const std::string &file_path, backend_map_t &backend_map);
 
-    ~nixlTelemetry();
+    ~nixlTelemetryWriter();
 
     void
     updateTxBytes(uint64_t tx_bytes);
@@ -74,7 +74,7 @@ public:
 
 private:
     void
-    initializeTelemetry();
+    initializeTelemetryWriter();
     void
     registerPeriodicTask(periodicTask &task);
     void
