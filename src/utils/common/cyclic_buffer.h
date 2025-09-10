@@ -35,6 +35,8 @@ public:
     operator=(const sharedRingBuffer &) = delete;
 
     bool
+    isInitialized() const {return header_ != nullptr;}
+    bool
     push(const T &item);
     bool
     pop(T &item);

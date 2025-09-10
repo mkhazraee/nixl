@@ -53,6 +53,8 @@ public:
 
     ~nixlTelemetryWriter();
 
+    bool
+    isInitialized() { return buffer_->isInitialized() && writeTask_.enabled_;}
     void
     updateTxBytes(uint64_t tx_bytes);
     void

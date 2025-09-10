@@ -135,7 +135,13 @@ nixlAgentData::nixlAgentData(const std::string &name, const nixlAgentConfig &cfg
             if (telemetry_env_dir != nullptr) {
                 std::string telemetry_file = std::string(telemetry_env_dir) + "/" + name;
                 telemetry_ = std::make_unique<nixlTelemetryWriter>(telemetry_file, backendEngines);
-                NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_file;
+                if (!telemetry_->isInitialized()) {
+                    NIXL_ERROR << "NIXL telemetry is enabled but failed to initialize";
+                    telemetryEnabled = false;
+                    telemetry_ = nullptr;
+                } else {
+                    NIXL_DEBUG << "NIXL telemetry is enabled with output file: " << telemetry_file;
+                }
             } else {
                 NIXL_DEBUG << "NIXL telemetry is enabled without an output file";
             }
