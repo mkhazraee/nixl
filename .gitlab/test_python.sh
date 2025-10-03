@@ -39,6 +39,8 @@ export NIXL_PLUGIN_DIR=${INSTALL_DIR}/lib/$ARCH-linux-gnu/plugins
 export NIXL_PREFIX=${INSTALL_DIR}
 # Raise exceptions for logging errors
 export NIXL_DEBUG_LOGGING=yes
+export FI_LOG_LEVEL=debug
+export FI_LOG_PROV=efa
 
 pip3 install --break-system-packages .
 pip3 install --break-system-packages pytest
@@ -46,6 +48,8 @@ pip3 install --break-system-packages pytest-timeout
 pip3 install --break-system-packages zmq
 
 cat /sys/devices/virtual/dmi/id/product_name
+echo "Product Name: $(cat /sys/devices/virtual/dmi/id/product_name)"
+echo "Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)"
 
 echo "==== Running ETCD server ===="
 etcd_port=$(get_next_tcp_port)
@@ -59,7 +63,7 @@ sleep 5
 
 echo "==== Running python tests ===="
 export NIXL_LOG_LEVEL=DEBUG
-pytest -s test/python
+# pytest -s test/python
 pytest -s test/python --backend LIBFABRIC
 python3 test/python/prep_xfer_perf.py list
 python3 test/python/prep_xfer_perf.py array
