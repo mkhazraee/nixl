@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument("--ip", type=str, required=True)
     parser.add_argument("--port", type=int, default=5555)
     parser.add_argument("--use_cuda", type=bool, default=False)
+    parser.add_argument("--backend", type=str, default="UCX")
     parser.add_argument(
         "--mode",
         type=str,
@@ -43,7 +44,7 @@ if __name__ == "__main__":
     else:  # To be sure this is the default
         torch.set_default_device("cpu")
 
-    config = nixl_agent_config(True, True, listen_port)
+    config = nixl_agent_config(True, True, listen_port, backends=[args.backend])
 
     # Allocate memory and register with NIXL
     try:
@@ -73,7 +74,7 @@ if __name__ == "__main__":
         logger.exception("Memory registration failed: %s", e)
         exit(1)
 
-    # Target code: its memory is read first, then written at randomly selected locations.
+    # Target code: its memory is read first, then written at randomly selected locations, then read again.
     if args.mode == "target":
         ready = False
 
@@ -115,16 +116,28 @@ if __name__ == "__main__":
             logger.exception("Send of descriptors to initiator failed: %s", e)
             exit(1)
 
-        # Wait for transfer notifications by polling; remove matches until the set is empty
-        expected_notifs = {b"048", b"159", b"2610", b"3711", b"W0", b"W1"}
+        # Wait for transfer notifications by polling; exact match for READs, startswith("Write") for WRITEs
+        expected_reads = {
+            b"Read idx 0,4,8",
+            b"Read idx 1,5,9",
+            b"Read idx 2,6,10",
+            b"Read idx 3,7,11",
+            b"Read idx 0,4,8 again",
+            b"Read idx 1,5,9 again",
+            b"Read idx 2,6,10 again",
+            b"Read idx 3,7,11 again",
+        }
+        remaining_writes = 2
         try:
             logger.info("Waiting for transfers (4 READs and 2 WRITEs)")
-            while expected_notifs:
+            while expected_reads or remaining_writes > 0:
                 notif_map = agent.get_new_notifs()
                 if "initiator" in notif_map:
                     for msg in notif_map["initiator"]:
-                        if msg in expected_notifs:
-                            expected_notifs.remove(msg)
+                        if msg in expected_reads:
+                            expected_reads.remove(msg)
+                        elif msg.startswith(b"Write") and remaining_writes > 0:
+                            remaining_writes -= 1
         except Exception as e:
             logger.exception("Polling notifications failed: %s", e)
             exit(1)
@@ -136,7 +149,7 @@ if __name__ == "__main__":
             exit(1)
         logger.info("Target data verification passed (zeros found in last 4 tensors)")
 
-    # Initiator code: reads target memory and then writes to randomlyselected locations.
+    # Initiator code: reads target memory and then writes to randomly selected locations, then reads again.
     else:
         logger.info("Initiator sending to %s", args.ip)
         try:
@@ -191,15 +204,17 @@ if __name__ == "__main__":
 
         handles = []
         read_handles = []
+        read_handles_2 = []
         try:
             for start in range(4):
                 idxs = [start, start + 4, start + 8]
-                notif = f"{start}{start + 4}{start + 8}".encode()
+                notif = f"Read idx {start},{start + 4},{start + 8}".encode()
                 read_handles.append(
                     agent.make_prepped_xfer(
                         "READ", local_side, idxs, remote_side, idxs[::-1], notif
                     )
                 )
+            read_handles_2 = list(read_handles)
             handles.extend(read_handles)
         except Exception as e:
             logger.exception("Creating READ handles failed: %s", e)
@@ -226,6 +241,7 @@ if __name__ == "__main__":
         # First WRITE: tensors 12 and 13 (using Python list/tuple descriptors)
         r0, r1 = 12, 13
         off0, off1 = starts_bytes[r0], starts_bytes[r1]
+        write_notif0 = f"Write tensors {r0}({'first' if off0 == 0 else 'second'}),{r1}({'first' if off1 == 0 else 'second'})".encode()
         local_w0 = [
             (tensor[r0, :].data_ptr() + off0, half_len, local_dev),
             (tensor[r1, :].data_ptr() + off1, half_len, local_dev),
@@ -237,9 +253,10 @@ if __name__ == "__main__":
         local_w0_d = agent.get_xfer_descs(local_w0, mem_type=local_mem)
         remote_w0_d = agent.get_xfer_descs(remote_w0, mem_type=remote_mem)
 
-        # Second WRITE: tensors 14 and 15 (using NumPy Nx3 descriptors for performance)
+        # Second WRITE: tensors 14 and 15 (using NumPy Nx3 descriptors for performance benefits over list/tuple)
         r2, r3 = 14, 15
         off2, off3 = starts_bytes[r2], starts_bytes[r3]
+        write_notif1 = f"Write tensors {r2}({'first' if off2 == 0 else 'second'}),{r3}({'first' if off3 == 0 else 'second'})".encode()
         local_w1_np = np.array(
             [
                 [tensor[r2, :].data_ptr() + off2, half_len, local_dev],
@@ -260,10 +277,10 @@ if __name__ == "__main__":
         # Prepare both WRITE requests
         try:
             xfer_w0 = agent.initialize_xfer(
-                "WRITE", local_w0_d, remote_w0_d, "target", b"W0"
+                "WRITE", local_w0_d, remote_w0_d, "target", write_notif0
             )
             xfer_w1 = agent.initialize_xfer(
-                "WRITE", local_w1_d, remote_w1_d, "target", b"W1"
+                "WRITE", local_w1_d, remote_w1_d, "target", write_notif1
             )
             write_handles = [xfer_w0, xfer_w1]
             handles.extend(write_handles)
@@ -309,6 +326,28 @@ if __name__ == "__main__":
                         write_handles.remove(h)
         except Exception as e:
             logger.exception("Posting/awaiting WRITEs failed: %s", e)
+            exit(1)
+
+        # Repost all READs with new notifications (no re-preparation needed).
+        # Example use case is when some data is getting updated, e.g., model parameters, and we want to read the updated data from the same locations to the same locations.
+        try:
+            for start in range(4):
+                # read_handle_2 is a list, so the same order is maintained
+                notif2 = f"Read idx {start},{start + 4},{start + 8} again".encode()
+                st = agent.transfer(read_handles_2[start], notif2)
+                if st == "ERR":
+                    logger.error("Reposting READ failed.")
+                    exit(1)
+            while read_handles_2:
+                for h in list(read_handles_2):
+                    st = agent.check_xfer_state(h)
+                    if st == "ERR":
+                        logger.error("A reposted READ transfer errored.")
+                        exit(1)
+                    if st == "DONE":
+                        read_handles_2.remove(h)
+        except Exception as e:
+            logger.exception("Reposting/awaiting READs (second round) failed: %s", e)
             exit(1)
 
         # Final verification on initiator: first 12 tensors should be ones
