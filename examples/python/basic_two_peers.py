@@ -74,23 +74,10 @@ if __name__ == "__main__":
         logger.exception("Memory registration failed: %s", e)
         exit(1)
 
-    # Target code: its memory is read first, then written at randomly selected locations, then read again.
+    # Target code: its memory is read first, then written at randomly selected locations, and then read again.
     if args.mode == "target":
-        ready = False
 
-        # Build transfer descriptors by unraveling the first dimension into a list of tensors
-        try:
-            target_tensors = [tensor[i, :] for i in range(tensor.shape[0])]
-            target_descs = agent.get_xfer_descs(target_tensors)
-            if not target_descs:
-                logger.error("Failed to build target transfer descriptors.")
-                exit(1)
-            target_desc_str = agent.get_serialized_descs(target_descs)
-        except Exception as e:
-            logger.exception("Preparing target descriptors failed: %s", e)
-            exit(1)
-
-        # Alternatively, pass minimal layout information so the initiator can generate descriptors locally.
+        # Extract layout information to send to the initiator so it can generate descriptors locally.
         base_addr = tensor.data_ptr()
         tensors = int(tensor.shape[0])  # 16
         tensor_size = int(tensor.shape[1] * tensor.element_size())  # bytes per tensor
@@ -101,8 +88,20 @@ if __name__ == "__main__":
 
         # Send descriptor list + layout to the initiator after its metadata is received.
         try:
+            # Build transfer descriptors by unraveling the first dimension into a list of tensors
+            target_tensors = [tensor[i, :] for i in range(tensor.shape[0])]
+            target_descs = agent.get_xfer_descs(target_tensors)
+            if not target_descs:
+                logger.error("Failed to build target transfer descriptors.")
+                exit(1)
+            target_desc_str = agent.get_serialized_descs(target_descs)
+
+            # Wait for initiator's metadata to be received.
+            ready = False
             while not ready:
                 ready = agent.check_remote_metadata("initiator")
+
+            # Send transfer relevant information to the initiator.
             agent.send_notif(
                 "initiator",
                 pickle.dumps(
@@ -113,10 +112,13 @@ if __name__ == "__main__":
                 ),
             )
         except Exception as e:
-            logger.exception("Send of descriptors to initiator failed: %s", e)
+            logger.exception(
+                "Preparing and sending transfer relevant information to the initiator failed: %s",
+                e,
+            )
             exit(1)
 
-        # Wait for transfer notifications by polling; exact match for READs, startswith("Write") for WRITEs
+        # Wait for transfer notifications by polling; exact match for READs, starts with 'Write' for WRITEs
         expected_reads = {
             b"Read idx 0,4,8",
             b"Read idx 1,5,9",
@@ -149,63 +151,52 @@ if __name__ == "__main__":
             exit(1)
         logger.info("Target data verification passed (zeros found in last 4 tensors)")
 
-    # Initiator code: reads target memory and then writes to randomly selected locations, then reads again.
+    # Initiator code: reads target memory, writes to randomly selected locations, and then reads again.
     else:
         logger.info("Initiator sending to %s", args.ip)
+        # Exchange metadata and receive transfer relevant information from the target.
         try:
-            # Exchange metadata after registrations, because they carry relevant information.
-            # Since the target process starts first and our registration is done, this is proper.
+            # Exchange metadata after registrations because they carry relevant information, such as necessary keys to access
+            # the remote memory. Since the target process starts first and our registration is done, this is proper.
             agent.send_local_metadata(args.ip, args.port)
             agent.fetch_remote_metadata("target", args.ip, args.port)
-        except Exception as e:
-            logger.exception("Metadata exchange (fetch/send) failed: %s", e)
-            exit(1)
 
-        try:
             notifs = agent.get_new_notifs()
             while len(notifs) == 0:
                 notifs = agent.get_new_notifs()
             target_descs_ser, layout_info = pickle.loads(notifs["target"][0])
             target_descs = agent.deserialize_descs(target_descs_ser)
-        except Exception as e:
-            logger.exception("Receiving target descriptors failed: %s", e)
-            exit(1)
 
-        # Build local transfer descriptors by unraveling the first dimension into a list of tensors
+            # Ensure remote metadata has arrived from fetch, required to generate transfer handles
+            ready = False
+            while not ready:
+                ready = agent.check_remote_metadata("target")
+
+        except Exception as e:
+            logger.exception(
+                "Metadata exchange or receiving transfer relevant information from the target failed: %s",
+                e,
+            )
+            exit(1)
+        logger.info("Ready for transfers")
+
+        # 1) Create transfer handles using prep_xfer + make_prepped_xfer when blocks are known in advance.
+        #    In this mode, we do the preparations once for each block, and when creating the transfer we just use indices to map
+        #    which block is going to which block, as long as the corresponding block sizes in source and destination are equal in size.
+        #    As an example, make 4 transfers of 3 tensors each, spaced 4 apart, using reversed ordering for remote blocks.
+        handles = []
+        read_handles = []
+        read_handles_2 = []
         try:
+            # Build local transfer descriptors by unraveling the first dimension into a list of tensors
             initiator_tensors = [tensor[i, :] for i in range(tensor.shape[0])]
             initiator_descs = agent.get_xfer_descs(initiator_tensors)
             if not initiator_descs:
                 logger.exception("Initiator's local descriptors creation failed.")
                 exit(1)
-        except Exception as e:
-            logger.exception("Initiator's local descriptors creation failed: %s", e)
-            exit(1)
-
-        # Ensure remote metadata has arrived from fetch
-        ready = False
-        while not ready:
-            try:
-                ready = agent.check_remote_metadata("target")
-            except Exception as e:
-                logger.exception("Checking of target metadata failed: %s", e)
-                exit(1)
-
-        logger.info("Ready for transfers")
-
-        # 1) Parallel transfers using prep_xfer + make_prepped_xfer when blocks are known in advance.
-        # As an example, make 4 transfers of 3 tensors each, spaced 4 apart, using reversed ordering for remote blocks.
-        try:
             local_side = agent.prep_xfer_dlist("", initiator_descs)
             remote_side = agent.prep_xfer_dlist("target", target_descs)
-        except Exception as e:
-            logger.exception("Preparation of xfer dlists failed: %s", e)
-            exit(1)
 
-        handles = []
-        read_handles = []
-        read_handles_2 = []
-        try:
             for start in range(4):
                 idxs = [start, start + 4, start + 8]
                 notif = f"Read idx {start},{start + 4},{start + 8}".encode()
@@ -220,9 +211,8 @@ if __name__ == "__main__":
             logger.exception("Creating READ handles failed: %s", e)
             exit(1)
 
-        # 2) Parallel transfers using initialize_xfer when locations are chosen at transfer time
-        #    (or when there is no notion of fixed blocks). As an example, randomly select which half
-        #    of each tensor to write, using 2 descriptors in each of the two transfers.
+        # 2) Create transfer handles using initialize_xfer when locations are chosen at transfer time, e.g., when there is no notion of fixed blocks.
+        #    NIXL prepares and maps in one step. As an example, randomly select which half of each tensor to write, using 2 descriptors per transfer.
         write_handles = []
         # Build local/remote descriptors for both WRITE requests
         base_addr, tensors, tensor_size, remote_dev, remote_mem = layout_info
@@ -238,58 +228,59 @@ if __name__ == "__main__":
         }
         half_len = int(tensor_size // 2)
 
-        # First WRITE: tensors 12 and 13 (using Python list/tuple descriptors)
-        r0, r1 = 12, 13
-        off0, off1 = starts_bytes[r0], starts_bytes[r1]
-        write_notif0 = f"Write tensors {r0}({'first' if off0 == 0 else 'second'}),{r1}({'first' if off1 == 0 else 'second'})".encode()
-        local_w0 = [
-            (tensor[r0, :].data_ptr() + off0, half_len, local_dev),
-            (tensor[r1, :].data_ptr() + off1, half_len, local_dev),
-        ]
-        remote_w0 = [
-            (base_addr + r0 * tensor_size + off0, half_len, remote_dev),
-            (base_addr + r1 * tensor_size + off1, half_len, remote_dev),
-        ]
-        local_w0_d = agent.get_xfer_descs(local_w0, mem_type=local_mem)
-        remote_w0_d = agent.get_xfer_descs(remote_w0, mem_type=remote_mem)
-
-        # Second WRITE: tensors 14 and 15 (using NumPy Nx3 descriptors for performance benefits over list/tuple)
-        r2, r3 = 14, 15
-        off2, off3 = starts_bytes[r2], starts_bytes[r3]
-        write_notif1 = f"Write tensors {r2}({'first' if off2 == 0 else 'second'}),{r3}({'first' if off3 == 0 else 'second'})".encode()
-        local_w1_np = np.array(
-            [
-                [tensor[r2, :].data_ptr() + off2, half_len, local_dev],
-                [tensor[r3, :].data_ptr() + off3, half_len, local_dev],
-            ],
-            dtype=np.uint64,
-        )
-        remote_w1_np = np.array(
-            [
-                [base_addr + r2 * tensor_size + off2, half_len, remote_dev],
-                [base_addr + r3 * tensor_size + off3, half_len, remote_dev],
-            ],
-            dtype=np.uint64,
-        )
-        local_w1_d = agent.get_xfer_descs(local_w1_np, mem_type=local_mem)
-        remote_w1_d = agent.get_xfer_descs(remote_w1_np, mem_type=remote_mem)
-
-        # Prepare both WRITE requests
+        # Prepare WRITE requests
         try:
+            # First WRITE: tensors 12 and 13 (using Python list/tuple descriptors)
+            r0, r1 = 12, 13
+            off0, off1 = starts_bytes[r0], starts_bytes[r1]
+            write_notif0 = f"Write tensors {r0}({'first' if off0 == 0 else 'second'}),{r1}({'first' if off1 == 0 else 'second'})".encode()
+            local_w0 = [
+                (tensor[r0, :].data_ptr() + off0, half_len, local_dev),
+                (tensor[r1, :].data_ptr() + off1, half_len, local_dev),
+            ]
+            remote_w0 = [
+                (base_addr + r0 * tensor_size + off0, half_len, remote_dev),
+                (base_addr + r1 * tensor_size + off1, half_len, remote_dev),
+            ]
+            local_w0_d = agent.get_xfer_descs(local_w0, mem_type=local_mem)
+            remote_w0_d = agent.get_xfer_descs(remote_w0, mem_type=remote_mem)
             xfer_w0 = agent.initialize_xfer(
                 "WRITE", local_w0_d, remote_w0_d, "target", write_notif0
             )
+
+            # Second WRITE: tensors 14 and 15 (using NumPy Nx3 descriptors for performance benefits over list/tuple)
+            r2, r3 = 14, 15
+            off2, off3 = starts_bytes[r2], starts_bytes[r3]
+            write_notif1 = f"Write tensors {r2}({'first' if off2 == 0 else 'second'}),{r3}({'first' if off3 == 0 else 'second'})".encode()
+            local_w1_np = np.array(
+                [
+                    [tensor[r2, :].data_ptr() + off2, half_len, local_dev],
+                    [tensor[r3, :].data_ptr() + off3, half_len, local_dev],
+                ],
+                dtype=np.uint64,
+            )
+            remote_w1_np = np.array(
+                [
+                    [base_addr + r2 * tensor_size + off2, half_len, remote_dev],
+                    [base_addr + r3 * tensor_size + off3, half_len, remote_dev],
+                ],
+                dtype=np.uint64,
+            )
+            local_w1_d = agent.get_xfer_descs(local_w1_np, mem_type=local_mem)
+            remote_w1_d = agent.get_xfer_descs(remote_w1_np, mem_type=remote_mem)
             xfer_w1 = agent.initialize_xfer(
                 "WRITE", local_w1_d, remote_w1_d, "target", write_notif1
             )
+
             write_handles = [xfer_w0, xfer_w1]
             handles.extend(write_handles)
         except Exception as e:
             logger.exception("Preparing WRITE handles failed: %s", e)
             exit(1)
 
-        # Post all READs in parallel and wait (no ordering guarantees across them).
+        # Do the transfers, first parallel READs, then parallel WRITEs, then repost the READs with new notifications.
         try:
+            # Post all READs in parallel and wait (no ordering guarantees across them).
             for h in read_handles:
                 st = agent.transfer(h)
                 if st == "ERR":
@@ -304,13 +295,9 @@ if __name__ == "__main__":
                         exit(1)
                     if st == "DONE":
                         read_handles.remove(h)
-        except Exception as e:
-            logger.exception("Posting/awaiting READs failed: %s", e)
-            exit(1)
 
-        # Applications can enforce ordering by waiting for some transfers to finish before starting others,
-        # Now post both WRITEs in parallel (without ordering guarantees) and wait.
-        try:
+            # Applications can enforce ordering by waiting for some transfers to finish before starting others.
+            # Now post both WRITEs in parallel (without ordering guarantees) and wait.
             for h in write_handles:
                 st = agent.transfer(h)
                 if st == "ERR":
@@ -324,13 +311,9 @@ if __name__ == "__main__":
                         exit(1)
                     if st == "DONE":
                         write_handles.remove(h)
-        except Exception as e:
-            logger.exception("Posting/awaiting WRITEs failed: %s", e)
-            exit(1)
 
-        # Repost all READs with new notifications (no re-preparation needed).
-        # Example use case is when some data is getting updated, e.g., model parameters, and we want to read the updated data from the same locations to the same locations.
-        try:
+            # Repost all READs with new notifications (no re-preparation needed). Any transfer handle can be reposted after the transfer is complete.
+            # Example use case is when some data is getting updated, e.g., model parameters, and we want to read the updated data from the same locations to the same locations.
             for start in range(4):
                 # read_handle_2 is a list, so the same order is maintained
                 notif2 = f"Read idx {start},{start + 4},{start + 8} again".encode()
@@ -347,7 +330,7 @@ if __name__ == "__main__":
                     if st == "DONE":
                         read_handles_2.remove(h)
         except Exception as e:
-            logger.exception("Reposting/awaiting READs (second round) failed: %s", e)
+            logger.exception("Some READs or WRITEs failed: %s", e)
             exit(1)
 
         # Final verification on initiator: first 12 tensors should be ones
@@ -361,20 +344,16 @@ if __name__ == "__main__":
     # Tear down. The Python garbage collector will release transfer handles, but it's better to be explicit.
     # Metadata and registrations will also be released by the NIXL agent during destruction, but explicit cleanup is clearer.
     # (Metadata removal can also be done dynamically at runtime, for example to remove a failed node from possible destinations.)
-    if args.mode != "target":
-        try:
+    try:
+        if args.mode != "target":
             agent.remove_remote_agent("target")
             for h in handles:
                 agent.release_xfer_handle(h)
             agent.release_dlist_handle(local_side)
             agent.release_dlist_handle(remote_side)
             agent.invalidate_local_metadata(args.ip, args.port)
-        except Exception as e:
-            logger.exception("Tear down (metadata/transfer handles) failed: %s", e)
-
-    try:
         agent.deregister_memory(reg_descs)
     except Exception as e:
-        logger.exception("Deregisteration of memory failed: %s", e)
+        logger.exception("Tear down (metadata/transfer handles) failed: %s", e)
 
     logger.info("Test Complete.")
