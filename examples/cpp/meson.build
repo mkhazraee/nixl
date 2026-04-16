@@ -29,6 +29,16 @@ if etcd_dep.found()
                install: true)
 endif
 
+if get_option('build_nixl_service')
+    nixl_example_replica = executable('nixl_example_replica',
+        'nixl_example_replica.cpp',
+        dependencies: [nixl_dep, nixl_infra, nixl_common_deps, nixl_test_utils_dep,
+                       nixl_service_dep],
+        include_directories: [nixl_inc_dirs, utils_inc_dirs, nixl_service_inc],
+        link_with: [serdes_lib],
+        install: true)
+endif
+
 telemetry_reader = executable('telemetry_reader',
            'telemetry_reader.cpp',
            dependencies: [nixl_dep, nixl_common_deps],

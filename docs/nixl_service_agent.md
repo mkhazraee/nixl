@@ -13,7 +13,8 @@ type rather than a subtype of `nixlXferReqH` — it tracks multi-step pipeline s
 a single transfer. This does not affect Python usage, as handles are returned as typed objects
 and duck typing handles dispatch automatically. In C++, a `= delete`d base-type overload
 produces a clear compile error at the handle declaration, guiding users to the only update
-needed. `DIRECT` mode has the same behavior as the base class, so users who want both plain
+needed. Same goes for the change from `nixl_service_opt_args_t` in place of `nixl_opt_args_t`.
+`DIRECT` mode has the same behavior as the base class, so users who want both plain
 and service transfers can toggle per-transfer without switching types.
 
 Service progress is driven by notification callbacks in an event-driven manner — no background
@@ -91,20 +92,14 @@ struct nixlServiceAgentConfig : nixlAgentConfig {
     // COMPRESS: default algorithm to use when none specified per-transfer
     nixl_comp_algo_t    defaultCompAlg = nixl_comp_algo_t::ANS;
     // nixl_enc_algo_t  defaultEncAlg  = ...;  // future: ENC, ENC_COMP modes
-
-    // Per-algorithm staging slot sizes, populated from marshalQuery() before construction.
-    // Required for any mode that uses the marshal sub-service; empty is valid for DIRECT-only.
-    std::unordered_map<nixl_comp_algo_t, size_t> algSlotSizes;
 };
 ```
 
-`algSlotSizes` is filled by the caller using the output of `marshalQuery()` before constructing
-the agent. A DIRECT-only config with an empty `algSlotSizes` is valid. Additional fields are
-added as new modes are implemented.
+Additional fields are added as new modes are implemented.
 
 ### Per-Transfer Options
 
-`nixlServiceOptArgs` extends `nixl_opt_args_t` with optional per-transfer mode and algorithm
+`nixl_service_opt_args_t` extends `nixl_opt_args_t` with optional per-transfer mode and algorithm
 overrides. Resolution order: opt-args → config default → DIRECT.
 
 ### Transfer Handle and API Compatibility
@@ -121,10 +116,12 @@ clear compile error at the declaration site. Methods that require knowledge of t
 pipeline to be meaningful (`estimateXferCost`, `getXferTelemetry`) are also `= delete`d until
 service-aware implementations are added.
 
-In Python, `nixlServiceXferReqH` is bound as an independent class with no base:
+In Python, `nixlServiceXferReqH` is bound as an independent class with no base, and
+`nixl_service_opt_args_t` is bound inheriting from `nixl_opt_args_t`:
 
 ```cpp
 py::class_<nixlServiceXferReqH>(m, "nixlServiceXferReqH")
+py::class_<nixl_service_opt_args_t, nixl_opt_args_t>(m, "nixlServiceOptArgs")
 ```
 
 Handles are returned as typed objects from `createXferReq`; Python's duck typing means they
@@ -146,15 +143,13 @@ struct MarshalRequirements {
 };
 ```
 
-`marshalQuery` is a free static function — no agent instance required. It calls each backend
-class's static `queryRequirements(reqs)` method, aggregating `algSlotSizes` across all
-compiled-in backends. Slot sizes are performance recommendations — the chunk size at which each
+`marshalQuery` is a free function — no agent instance required. It aggregates `algSlotSizes`
+by instantiating each compiled-in backend and calling its virtual `queryRequirements(reqs)` method. Slot sizes are performance recommendations — the chunk size at which each
 backend operates at peak throughput on the detected GPU architecture — not worst-case output
 bounds. As an example, `nvcomp_backend` might return ~256 MB for ANS (optimal for FP16
 KV-cache entropy coding) and ~16–64 MB for Bitcomp (FP4 weights, where finer granularity
-helps pipeline overlap). `staging_backend` returns no entries in `algSlotSizes`; its slot size
-is user-configured (e.g. a `stageSlotSize` field in config) since it is not
-architecture-dependent. If the wire protocol employs double buffering, `marshalQuery` reports
+helps pipeline overlap). `staging_backend` returns no entries in `algSlotSizes`; an empty result means
+the whole registered buffer is treated as a single slot, which is not architecture-dependent. If the wire protocol employs double buffering, `marshalQuery` reports
 2× the underlying size so the caller allocates the correct staging memory without needing to
 know the buffering strategy. Returns `NIXL_SUCCESS` on success or an error if any backend
 query fails (e.g. no CUDA device present for nvCOMP).
@@ -170,52 +165,59 @@ Staging memory is separate from the application's regular NIXL-registered buffer
 registered explicitly before metadata exchange. `registerServiceMem` is forwarded to the marshal
 backend for `use`; the backend handles transport registration and any library-specific setup.
 
-Registration does not take an algorithm parameter. Slot granularity is
-`min(algSlotSizes.values())` from `marshalQuery()`, so all algorithms share the same staging
-memory: `numSlots = floor(total_size / min_slot_size)`; less than one slot returns
-`NIXL_ERR_INVALID_PARAM`. Wire messages carry only a slot number; both sides compute the
+Registration does not take an algorithm parameter. Slot granularity is derived from
+`queryRequirements()`: the minimum non-zero value in `algSlotSizes`, or the full buffer size if
+the map is empty (staging_backend). `numSlots = ceil(total_size / slot_size)`; less than one
+slot returns `NIXL_ERR_INVALID_PARAM`. Wire messages carry only a slot number; both sides compute the
 address as `base + slot_num * slot_size`, where `base` is the start of the registered service
 buffer.
 
-nixlServiceAgent extends `getLocalMD`/`loadRemoteMD` to append and parse service metadata using
-the same `nixlSerDes` tag-value format used throughout nixl — consistent with how backend
-engines attach per-memory metadata via `getPublicData()`. Per registered service buffer it
-serializes: service agent name, slot size, and slot count as additional tagged fields. Because
-the staging buffer is registered with nixl transport backends (e.g. UCX), the RDMA keys (rkeys)
-and base address are already included in the standard nixl memory descriptor metadata — the
-service metadata layer only adds the slot layout on top. This metadata must be re-exchanged
-after any `registerServiceMem`/`deregisterServiceMem` call, consistent with the base class.
-Both peers must register before metadata exchange.
+nixlServiceAgent extends `getLocalMD`/`loadRemoteMD` to include service staging pool layout
+alongside the standard nixlAgent metadata. Per registered service buffer it exchanges: base
+address, slot size, slot count, device ID, and memory type. The base nixlAgent blob already
+includes RDMA keys for the staging buffer; the service layer adds only the slot layout on top.
+Wire messages carry slot indices only; both peers compute addresses as `base + idx * slotSize`.
+This metadata must be re-exchanged after any `registerServiceMem`/`deregisterServiceMem` call.
+Both peers must register staging memory before exchanging metadata.
 
 ---
 
 ## Wire Protocol
 
-Service protocol messages (RTS, CTS, slot-freed, final completion) are `genNotif` calls with
-`_NIXLS_*`-prefixed strings, routed by callback to the per-backend queue. Intermediate
-per-chunk signals are not separate `genNotif` calls — they are notification strings attached
-to each NIXL_WRITE xferReq; the transport delivers them to the receiver automatically when
-the write lands. RDMA keys and base addresses are known from metadata exchange; wire messages
+Service protocol messages (RTS, CTS, slot-freed) are `genNotif` calls with `_NIXLS_*`-prefixed
+strings, routed by callback to the per-backend queue. Intermediate per-chunk signals are not
+separate `genNotif` calls — they are notification strings attached to each NIXL_WRITE xferReq;
+the transport delivers them to the receiver automatically when the write lands. The final
+user-visible notification is a plain `genNotif` with the user's own `notif_msg` string (not
+`_NIXLS_*`-prefixed), delivered locally after the last chunk is processed. RDMA keys and base addresses are known from metadata exchange; wire messages
 carry slot indices only. Slot-freed carries the specific index, enabling non-consecutive reuse
 and double buffering without physically adjacent slots.
 
+WRITE and READ paths use distinct prefixes for chunk notifications and slot-freed signals
+(`_NIXLS_WCHUNK_` / `_NIXLS_RCHUNK_`, `_NIXLS_WFREE_` / `_NIXLS_RFREE_`) so they route to
+separate handlers and can diverge independently as new behaviors are added per direction.
+
 ### WRITE
 
-RTS carries: `transfer_id`, algo, slot_size, intermediate notification prefix, final_notif_id
-(delivered to the user when all drains complete), and final destination descriptors. The
-receiver's callback handler allocates a slot and replies with CTS. The initiator pipelines
-chunks: fillSlot (async) → checkFill(slot_addr) → NIXL_WRITE with intermediate_prefix+N
-attached. The receiver's callback handler sees the intermediate notification, drains the slot
-(async), checkDrain(slot_addr), then sends slot-freed. The slot_freed arriving at the initiator
-confirms the write completed and frees both slots for the next chunk. When all drains complete,
-the receiver delivers final_notif_id to the user.
+RTS carries: `transfer_id`, `mode`, `[algo]`, `slot_size`, `notif_msg`, and final destination
+descriptors. `mode` tells the receiver which backend handles the slot (staging, compression, …);
+`[algo]` is present only when the mode requires an algorithm selector; `notif_msg` is the
+user-specified notification string from `opt.notif` — delivered to the receiver's user after
+the last chunk is drained. The receiver allocates a slot and replies with CTS. The initiator pipelines
+chunks: fillSlot (async) → checkFill(slot_addr) → NIXL_WRITE with a chunk notification
+`_NIXLS_WCHUNK_{transfer_id, N}` attached (`transfer_id` is the whole-transfer ID; `N` is the
+per-transfer chunk sequence number; `isLast` is 1 on the final chunk, 0 otherwise — no total
+count is sent in RTS, so the receiver learns the end from this flag). As each chunk lands, the
+receiver drains the slot and immediately sends WFREE back to the initiator, allowing slot reuse
+(backpressure and double buffering). WFREE also carries `isLast`. On the last chunk the receiver
+additionally delivers `notif_msg` to its own user. When the last WFREE arrives at the initiator,
+the initiator marks the transfer complete.
 
 ```
 Initiator                                              Receiver
 ---------                                              --------
-genNotif(RTS{transfer_id, algo, slot_size,  -->
-             intermediate_prefix,
-             final_notif_id, final_dst})
+genNotif(RTS{transfer_id, mode, [algo],     -->
+             slot_size, notif_msg, final_dst})
                                                        [callback: alloc slot R]
                                    <-- genNotif(CTS{transfer_id, slot_R})
 
@@ -223,52 +225,53 @@ genNotif(RTS{transfer_id, algo, slot_size,  -->
 fillSlot(src_N → slot_I)             [async GPU]
 checkFill(slot_I_addr) == DONE
 postXferReq(NIXL_WRITE slot_I → slot_R,  -->
-            notif=intermediate_prefix+N)
-                                                       [callback: intermediate notif arrived]
+            notif=_NIXLS_WCHUNK_{transfer_id, N, isLast})
+                                                       [callback: chunk notif arrived]
                                                        drainSlot(slot_R → dst_N)  [async GPU]
                                                        checkDrain(slot_R_addr) == DONE
-                                   <-- genNotif(slot_freed{slot_R})
-[callback: slot freed → reuse both slots; start next chunk]
+                                   <-- genNotif(_NIXLS_WFREE_{transfer_id, slot_R, isLast})
+[callback: free slot_I (reuse for next chunk)]
+[if isLast: mark COMPLETE; getXferStatus returns success]
+                                                       [if isLast: genNotif(notif_msg) → user]
 -- end per chunk --
-
-[callback: last slot_freed → mark initiator side COMPLETE]
-
-                                                       [all chunks drained]
-                                                       genNotif(final_notif_id)
 ```
 
 ### READ
 
-READ_REQ carries: `transfer_id`, initiator's pre-allocated slot indices, algo, slot_size,
-intermediate notification prefix, and source descriptors. The remote fills each slot via
-NIXL_WRITE with the intermediate notification attached. The initiator's callback handler drains
-on arrival, then sends slot-freed so the remote can reuse without waiting. When all drains are
-done, the initiator sends a final completion notification to the remote.
+READ_REQ carries: `transfer_id`, initiator's pre-allocated slot index, `mode`, `[algo]`,
+`slot_size`, `notif_msg`, and destination descriptors. `notif_msg` is the user-specified
+notification string from `opt.notif` — delivered to the provider's user after the last RFREE
+arrives (confirming all data has been received by the initiator). The provider fills each slot via NIXL_WRITE
+with a chunk notification `_NIXLS_RCHUNK_{transfer_id, N, isLast}` attached. As each chunk
+lands, the initiator drains it and immediately sends RFREE, carrying `isLast`, allowing the
+provider to reuse the slot for the next chunk (backpressure and double buffering). On the last
+chunk the initiator marks COMPLETE — at which point `getXferStatus` returns success. When the
+last RFREE arrives at the provider, the provider frees the slot and delivers `notif_msg` to its
+own user.
 
 ```
-Initiator                                              Remote
+Initiator                                              Remote (provider)
 ---------                                              ------
-[alloc local slots I]
+[alloc local slot I]
 genNotif(READ_REQ{transfer_id,              -->
-                  slot_indices, algo,
-                  slot_size, intermediate_prefix,
-                  src_descs})
+                  slot_index, mode, [algo],
+                  slot_size, notif_msg, dst_descs})
 
-                                                       [callback: start fills per chunk]
-                                                       fillSlot(src_N → slot_I) [async GPU]
-                                                       checkFill(slot_I_addr) == DONE
+-- per chunk N --
+                                                       [callback: alloc slot R, start fill]
+                                                       fillSlot(dst_descs → slot_R) [async GPU]
+                                                       checkFill(slot_R_addr) == DONE
                                                        postXferReq(NIXL_WRITE → slot_I,
-                                   <--                 notif=intermediate_prefix+N)
+                                   <--                 notif=_NIXLS_RCHUNK_{transfer_id, N, isLast})
 
-[callback: intermediate notif arrived]
+[callback: chunk notif arrived]
 drainSlot(slot_I → final_dst_N)    [async GPU]
 checkDrain(slot_I_addr) == DONE
-genNotif(slot_freed{slot_I})       -->
-                                                       [slot_I available for next chunk]
-
-[all drains complete]
-genNotif(final_notif_to_remote)    -->
-mark initiator side COMPLETE
+genNotif(_NIXLS_RFREE_{transfer_id, slot_I, isLast})  -->
+[if isLast: mark COMPLETE; getXferStatus returns success]
+                                                       [callback: free slot_R (reuse for next chunk)]
+                                                       [if isLast: genNotif(notif_msg) → user]
+-- end per chunk --
 ```
 
 ---
@@ -278,9 +281,9 @@ mark initiator side COMPLETE
 `nixlMarshalBackend` defines what each implementation must provide:
 
 - **Capabilities:** `getSupportedMems()` — memory types accepted for staging;
-`static queryRequirements(MarshalRequirements&)` — each backend class exposes a static
-method that reports its ideal slot size for the detected GPU architecture;
-`marshalQuery` aggregates across all backend classes by calling these static methods
+`queryRequirements(MarshalRequirements&)` — pure virtual; each backend reports its ideal slot
+size; `staging_backend` returns no entries (whole buffer = one slot); `marshalQuery` aggregates
+across all compiled-in backends by instantiating each and calling this method
 - **Resource management:** `registerStagingMem(descs, agent)`,
 `deregisterStagingMem(descs, agent)` — each backend independently registers staging buffers
 with the underlying nixlAgent transport (making them RDMA-accessible) and with its own library
@@ -297,55 +300,66 @@ using the slot address as the unique key (a slot is owned by at most one operati
 
 ### Callback Injection
 
-nixlServiceAgent uses a static helper to populate `notifCallbacks` in the config before the
-base constructor runs — one entry per backend sub-prefix (e.g. `"_NIXLS_STAGE_"`,
-`"_NIXLS_COMP_"`). This is the same injection pattern used to avoid any ordering issue between
-queue construction and base initialization:
+A static `prepare()` helper registers a single callback for the `_NIXLS_` prefix before the
+base constructor runs, capturing a weak pointer to `nixlServiceAgentData`:
 
 ```cpp
 nixlServiceAgent::nixlServiceAgent(const std::string& name, nixlServiceAgentConfig cfg)
-    : nixlAgent(name, injectCallbacks(cfg, stagingQueue_, compQueue_, ...))
+    : nixlServiceAgent(name, prepare(std::move(cfg)))
 ```
 
 The base agent routes matching notifications to the registered callback at arrival; all others
-reach the user's `getNotifs()` unchanged. The callback runs the state machine directly — no
-intermediate queue is needed for Phase 2/3. No backend registers its own callback —
-nixlServiceAgent owns all `_NIXLS_*` routing.
+reach the user's `getNotifs()` unchanged. No backend registers its own callback —
+nixlServiceAgent owns all `_NIXLS_*` routing and dispatches internally by prefix.
 
-### State Machine and checkXfer
+### driveService and Per-Service Queues
 
-The callback is the sole progress mechanism — no polling or progress thread is needed for
-correctness. Every incoming wire message (CTS, slot-freed, READ_REQ, intermediate notification)
-triggers the next protocol action directly in the callback: submit GPU op, poll
-`checkFill`/`checkDrain` synchronously (fast for GPU ops), post the next NIXL_WRITE or send
-the next wire reply. The transfer handle's completion flag is set by the callback when all
-work is done.
+Callbacks must not call NIXL agent methods (`genNotif`, `createXferReq`, `postXferReq`, etc.) —
+those carry locks and network state that are unsafe to invoke from the UCX progress thread.
+Callbacks may update plain data structures under a mutex (slot pool bookkeeping, atomic handle
+state), but all networking operations are queued as `ServiceWorkItem`s for execution on a safe
+thread. Each sub-service (marshal, future encrypt, …) owns its own queue; the callback
+dispatches by prefix into the appropriate queue, decoupling sub-services from each other.
 
-`getXferStatus(nixlServiceXferReqH*)` is therefore a pure status query — it reads the flag
-the callback set. No progress is driven by calling it.
+Two progress models are supported, mirroring nixlAgent's own progress-thread duality:
 
-Phase 4 moves GPU op polling out of the callback and into a per-backend thread, making
-callbacks non-blocking. This is a performance optimization — if callbacks become a bottleneck
-(e.g. many concurrent transfers), one thread per backend handles the GPU completion polling
-asynchronously. Until then, synchronous polling in the callback is sufficient.
+`driveService()` is a private method — the canonical internal driver. It drains the service
+work queue and collects user-visible notifications. Both `getXferStatus()` and `getNotifs()`
+call it before doing their respective reads, so the standard nixlAgent polling idiom works
+without any extra calls.
+
+**No-progress-thread mode:** `getXferStatus()` and `getNotifs()` both call `driveService()`
+on the caller's thread. No background thread needed for correctness.
+
+**Progress-thread mode (Phase 4):** a background thread per sub-service runs `driveService()`
+in a loop. `getXferStatus()` and `getNotifs()` become pure queries; `driveService()` inside
+each is a no-op because the thread keeps the queue empty.
+
+### State Machine and getXferStatus
+
+`getXferStatus(nixlServiceXferReqH*)` calls `driveService()` then reads the completion flag set
+when the queue processes the final protocol step. In progress-thread mode it becomes a pure
+status read.
 
 ---
 
 ## File Structure
 
-### New: `src/nixlService/`
+### New: `src/services/`
 
 
-| File                    | Purpose                                                                                                                |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `nixl_service_types.h`  | `nixl_service_mode_t`, `nixl_comp_algo_t`, handle types, config, opt args, wire message structs, `MarshalRequirements` |
-| `nixl_service.h`        | `nixlServiceAgent` class declaration; `nixlService::marshalQuery`                                                      |
-| `nixl_service_data.h`   | Pimpl `nixlServiceAgentData`: slot pools per peer, pending transfer map                                               |
-| `nixl_service.cpp`      | nixlServiceAgent implementation and wire protocol state machine                                                        |
-| `marshal_backend.h`     | `nixlMarshalBackend` abstract interface                                                                                |
-| `staging_backend.h/cpp` | STAGE_BOTH: fill/drain via `cudaMemcpyAsync` gather/scatter                                                            |
-| `nvcomp_backend.h/cpp`  | COMPRESS: fill/drain via nvCOMP ANS compress/decompress                                                                |
-| `meson.build`           | Conditional on `build_nixl_service`                                                                                    |
+| File                               | Purpose                                                                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `nixl_service_types.h`             | `nixl_service_mode_t`, `nixl_comp_algo_t`, handle types, config, opt args, `MarshalRequirements`                       |
+| `nixl_service.h`                   | `nixlServiceAgent` class declaration; `nixlService::marshalQuery`                                                      |
+| `nixl_service_data.h`              | Pimpl `nixlServiceAgentData`: slot pools, transfer maps, work queue, marshal backend                                   |
+| `nixl_service.cpp`                 | `nixlServiceAgent` implementation: mem registration, metadata exchange, transfer lifecycle                              |
+| `marshal/marshal_backend.h`        | `nixlMarshalBackend` abstract interface                                                                                |
+| `marshal/marshal_protocol.h/cpp`   | `nixlMarshalProtocol`: STAGE_BOTH wire protocol (dispatch, post, driveQueue, handlers)                                 |
+| `marshal/marshal_utils.h`          | Inline pack/unpack helpers and `_NIXLS_*` wire message prefixes                                                        |
+| `marshal/staging/staging_backend.h/cpp` | STAGE_BOTH: fill/drain via `cudaMemcpyAsync` gather/scatter                                                      |
+| `marshal/nvcomp/nvcomp_backend.h/cpp`   | COMPRESS: fill/drain via nvCOMP ANS compress/decompress *(Phase 3)*                                              |
+| `meson.build`                      | Conditional on `build_nixl_service`; add `nvcomp_path` for Phase 3                                                    |
 
 
 ### Modified Files
@@ -355,59 +369,65 @@ asynchronously. Until then, synchronous polling in the callback is sufficient.
 | -------------------- | ------------------------------------------------------------------------- |
 | `src/api/cpp/nixl.h` | Add `virtual ~nixlAgent()`                                                |
 | `meson_options.txt`  | Add `nvcomp_path` (string), `build_nixl_service` (boolean, default false) |
-| `src/meson.build`    | Add conditional `subdir('nixlService')`                                   |
+| `src/meson.build`    | Add conditional `subdir('services')`                                      |
 
 
 ---
 
 ## Implementation Phases
 
-### Phase 0: Scaffolding
+### Phase 0: Scaffolding ✅
 
-Add `virtual ~nixlAgent()`, build options, and `src/nixlService/` directory stub.
-**Milestone:** clean build with no regressions.
+Add `virtual ~nixlAgent()`, build options, and `src/services/` directory stub.
 
-### Phase 1: Types and Headers
+### Phase 1: Types and Headers ✅
 
 Define `nixl_service_types.h`, `marshal_backend.h`, `nixl_service.h`, `nixl_service_data.h`.
-Wire message structs (RTS, CTS, READ_REQ, slot-freed) with their fields; `nixlMarshalBackend`
-interface including `fillSlot`/`drainSlot`/`checkFill`/`checkDrain`.
-**Milestone:** all headers compile; `nixlMarshalBackend` interface ready for implementations.
+Wire message structs (RTS, CTS, READ_REQ, slot-freed, final notif) with their fields;
+`nixlMarshalBackend` interface including `fillSlot`/`drainSlot`/`checkFill`/`checkDrain`.
 
-### Phase 2: staging_backend + STAGE_BOTH
+### Phase 2: staging_backend + STAGE_BOTH ✅
 
 Implement `staging_backend` via `cudaMemcpyAsync`. Implement DIRECT passthrough and full
-STAGE_BOTH WRITE and READ state machines with the pipelined, slot-freed-based wire protocol.
-State machine is driven entirely by callbacks; GPU op polling is synchronous in the callback.
-`checkXfer` on service handles is a pure status query.
-**Milestone:** two-process WRITE and READ with non-contiguous descriptors verified; nixlAgent
-tests pass in DIRECT mode.
+STAGE_BOTH WRITE and READ state machines: RTS/CTS handshake, NIXL_WRITE with intermediate
+notification, drain, SLOT_FREED, final notification. Callbacks are minimal — they enqueue work
+items into a per-service queue and return; `driveService()` drains the queue on the user's
+thread. GPU op polling is synchronous in the queue drain (not in the callback). Single staging
+slot per transfer (data fits in one slot).
+
+**Milestone:** single-process two-agent WRITE and READ with non-contiguous descriptors
+verified; nixlAgent tests pass in DIRECT mode. ✅
 
 ### Phase 3: nvcomp_backend + COMPRESS
 
-Implement `nvcomp_backend` via nvCOMP ANS. Wire protocol unchanged from Phase 2; only
-`fillSlot`/`drainSlot` and their async completion differ. Implement `marshalQuery`
-(`staging_backend` returns no entries; `nvcomp_backend` populates `algSlotSizes` for ANS).
+Implement `nvcomp_backend` via nvCOMP ANS. Add an `algo` field to RTS and READ_REQ wire
+messages so the receiver selects the correct backend. Wire protocol otherwise unchanged from
+Phase 2; only `fillSlot`/`drainSlot` and their async completion differ. `nvcomp_backend`
+populates `algSlotSizes` for ANS in `queryRequirements`.
 
 Two implementation constraints to observe:
 - **Workspace isolation:** nvCOMP requires a temporary workspace per active transfer
-  (`getCompressTempSize`). This workspace must never be shared across concurrent transfers —
+  (`getCompressTempSize`). This workspace must never be shared across concurrent transfers.
   two concurrent transfers sharing a workspace will silently corrupt each other's intermediate
   state. Each `nixlServiceXferReqH` owns its workspace for the lifetime of the transfer.
 - **GPUNETIO stream ordering:** `nvcomp_backend` uses a compression CUDA stream and a transfer
-  stream ordered via `cudaEventRecord`/`cudaStreamWaitEvent`. This ordering must be explicitly
-  validated against the GPUNETIO backend, which has its own internal stream model that may
+  stream ordered via `cudaEventRecord`/`cudaStreamWaitEvent`. This ordering must be validated
+  against the GPUNETIO backend, which has its own internal stream model that may
   interact with external stream dependencies.
 
 **Milestone:** WRITE and READ compress/decompress verified at multiple transfer sizes.
 
-### Phase 4: Per-Backend Thread (Optional Performance)
+### Phase 4: Multi-Chunk Pipelining + Per-Service Thread
 
-Move GPU op polling (`checkFill`/`checkDrain`) out of callbacks and into a per-backend thread,
-making callbacks non-blocking. Correctness is unchanged — this only matters when callback
-latency becomes a bottleneck under high concurrency.
-**Milestone:** throughput under concurrent transfers matches Phase 2/3; callbacks return
-immediately.
+**Pipelining:** lift the single-slot limitation. Each chunk is sent as a separate NIXL_WRITE
+with `isLast=0`; the final chunk carries `isLast=1`. The `isLast` flag is already in the wire
+(WCHUNK/RCHUNK and WFREE/RFREE); the main work is allocating and tracking multiple slots
+concurrently and adding chunk counters to `InboundTransferState`.
+
+**Per-service thread:** add a background thread per sub-service that drains its queue
+autonomously, keeping GPU polling off the user's thread.
+
+**Milestone:** transfers larger than one slot complete correctly with multiple chunks in-flight.
 
 ### Phase 5: Python Bindings
 

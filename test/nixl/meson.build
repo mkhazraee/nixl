@@ -38,3 +38,17 @@ plugin_test = executable('test_plugin',
                         include_directories: [nixl_inc_dirs, utils_inc_dirs],
                         install: true)
 
+if get_option('build_nixl_service')
+    _svc_example_deps = [nixl_dep, nixl_infra, nixl_common_deps, nixl_test_utils_dep,
+                         nixl_service_dep]
+    if cuda_dep.found()
+        _svc_example_deps += [cuda_dep]
+    endif
+    nixl_service_example = executable('nixl_service_example',
+        'nixl_service_example.cpp',
+        dependencies: _svc_example_deps,
+        include_directories: [nixl_inc_dirs, utils_inc_dirs, nixl_service_inc],
+        link_with: [serdes_lib],
+        install: true)
+endif
+
