@@ -19,7 +19,7 @@ and service transfers can toggle per-transfer without switching types.
 
 Service progress is driven by notification callbacks in an event-driven manner — no background
 thread is required for correctness; per-backend threads will be added as a performance
-optimization (Phase 4) to keep callbacks non-blocking under high concurrency. Services are
+optimization (Phase 5) to keep callbacks non-blocking under high concurrency. Services are
 organized as **sub-services**. Each sub-service owns a wire protocol and defines an interface
 for its backends. The current sub-service is **marshaling**; when the need arises, future
 sub-services (encryption, etc.) would each add their own wire protocol and backend interface
@@ -331,7 +331,7 @@ without any extra calls.
 **No-progress-thread mode:** `getXferStatus()` and `getNotifs()` both call `driveService()`
 on the caller's thread. No background thread needed for correctness.
 
-**Progress-thread mode (Phase 4):** a background thread per sub-service runs `driveService()`
+**Progress-thread mode (Phase 5):** a background thread per sub-service runs `driveService()`
 in a loop. `getXferStatus()` and `getNotifs()` become pure queries; `driveService()` inside
 each is a no-op because the thread keeps the queue empty.
 
@@ -358,8 +358,8 @@ status read.
 | `marshal/marshal_protocol.h/cpp`   | `nixlMarshalProtocol`: STAGE_BOTH wire protocol (dispatch, post, driveQueue, handlers)                                 |
 | `marshal/marshal_utils.h`          | Inline pack/unpack helpers and `_NIXLS_*` wire message prefixes                                                        |
 | `marshal/staging/staging_backend.h/cpp` | STAGE_BOTH: fill/drain via `cudaMemcpyAsync` gather/scatter                                                      |
-| `marshal/nvcomp/nvcomp_backend.h/cpp`   | COMPRESS: fill/drain via nvCOMP ANS compress/decompress *(Phase 3)*                                              |
-| `meson.build`                      | Conditional on `build_nixl_service`; add `nvcomp_path` for Phase 3                                                    |
+| `marshal/nvcomp/nvcomp_backend.h/cpp`   | COMPRESS: fill/drain via nvCOMP ANS compress/decompress *(Phase 4)*                                              |
+| `meson.build`                      | Conditional on `build_nixl_service`; add `nvcomp_path` for Phase 4                                                    |
 
 
 ### Modified Files
@@ -398,7 +398,17 @@ slot per transfer (data fits in one slot).
 **Milestone:** single-process two-agent WRITE and READ with non-contiguous descriptors
 verified; nixlAgent tests pass in DIRECT mode. ✅
 
-### Phase 3: nvcomp_backend + COMPRESS
+### Phase 3: Python Bindings ✅
+
+Both the C++ binding (`_service_bindings`) and the Python API (`_service_api.py`) use
+inheritance — only the diff from the base classes is defined. Replacing `nixlAgent` with
+`nixlServiceAgent` at construction is the only change needed. A test mirrors
+`test_nixl_bindings.py::test_agent` with minimal substitutions.
+
+**Milestone:** DIRECT mode end-to-end in Python ✅; STAGE_BOTH and COMPRESS bindings in place,
+pending their C++ backends being complete.
+
+### Phase 4: nvcomp_backend + COMPRESS
 
 Implement `nvcomp_backend` via nvCOMP ANS. Add an `algo` field to RTS and READ_REQ wire
 messages so the receiver selects the correct backend. Wire protocol otherwise unchanged from
@@ -408,7 +418,7 @@ populates `algSlotSizes` for ANS in `queryRequirements`.
 Two implementation constraints to observe:
 - **Workspace isolation:** nvCOMP requires a temporary workspace per active transfer
   (`getCompressTempSize`). This workspace must never be shared across concurrent transfers.
-  two concurrent transfers sharing a workspace will silently corrupt each other's intermediate
+  Two concurrent transfers sharing a workspace will silently corrupt each other's intermediate
   state. Each `nixlServiceXferReqH` owns its workspace for the lifetime of the transfer.
 - **GPUNETIO stream ordering:** `nvcomp_backend` uses a compression CUDA stream and a transfer
   stream ordered via `cudaEventRecord`/`cudaStreamWaitEvent`. This ordering must be validated
@@ -417,7 +427,7 @@ Two implementation constraints to observe:
 
 **Milestone:** WRITE and READ compress/decompress verified at multiple transfer sizes.
 
-### Phase 4: Multi-Chunk Pipelining + Per-Service Thread
+### Phase 5: Multi-Chunk Pipelining + Per-Service Thread
 
 **Pipelining:** lift the single-slot limitation. Each chunk is sent as a separate NIXL_WRITE
 with `isLast=0`; the final chunk carries `isLast=1`. The `isLast` flag is already in the wire
@@ -428,11 +438,6 @@ concurrently and adding chunk counters to `InboundTransferState`.
 autonomously, keeping GPU polling off the user's thread.
 
 **Milestone:** transfers larger than one slot complete correctly with multiple chunks in-flight.
-
-### Phase 5: Python Bindings
-
-Bind `nixlServiceAgent`, config, opt args, handle type, and `marshalQuery`.
-**Milestone:** DIRECT, STAGE_BOTH, and COMPRESS end-to-end in Python.
 
 ---
 

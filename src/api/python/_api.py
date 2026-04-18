@@ -177,22 +177,7 @@ class nixl_agent:
         if not nixl_conf:
             nixl_conf = nixl_agent_config()  # Using defaults set in nixl_agent_config
 
-        thread_config = (
-            nixlBind.NIXL_THREAD_SYNC_STRICT
-            if nixl_conf.enable_listen
-            else nixlBind.NIXL_THREAD_SYNC_NONE
-        )
-
-        # Set agent config and instantiate an agent
-        agent_config = nixlBind.nixlAgentConfig()
-        agent_config.useProgThread = nixl_conf.enable_pthread
-        agent_config.useListenThread = nixl_conf.enable_listen
-        agent_config.listenPort = nixl_conf.port
-        agent_config.syncMode = thread_config
-        agent_config.pthrDelay = 0
-        agent_config.lthrDelay = 100000
-        agent_config.captureTelemetry = nixl_conf.capture_telemetry
-        self.agent = nixlBind.nixlAgent(agent_name, agent_config)
+        self._build_agent(agent_name, nixl_conf)
 
         self.name = agent_name
         self._leaked_xfer_handles: list[int] = []
@@ -249,6 +234,24 @@ class nixl_agent:
         }
 
         logger.info("Initialized NIXL agent: %s", agent_name)
+
+    def _build_agent(self, agent_name: str, nixl_conf: "nixl_agent_config") -> None:
+        """Translate config and instantiate self.agent. Subclasses override to use a different C++ agent."""
+        thread_config = (
+            nixlBind.NIXL_THREAD_SYNC_STRICT
+            if nixl_conf.enable_listen
+            else nixlBind.NIXL_THREAD_SYNC_NONE
+        )
+        # Set agent config and instantiate an agent
+        agent_config = nixlBind.nixlAgentConfig()
+        agent_config.useProgThread = nixl_conf.enable_pthread
+        agent_config.useListenThread = nixl_conf.enable_listen
+        agent_config.listenPort = nixl_conf.port
+        agent_config.syncMode = thread_config
+        agent_config.pthrDelay = 0
+        agent_config.lthrDelay = 100000
+        agent_config.captureTelemetry = nixl_conf.capture_telemetry
+        self.agent = nixlBind.nixlAgent(agent_name, agent_config)
 
     def __del__(self):
         # Best-effort cleanup of any leaked xfer handles belonging to this agent

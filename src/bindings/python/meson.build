@@ -32,4 +32,13 @@ py.extension_module('_utils',
            dependencies: [pybind_dep],
            install: true)
 
+if get_option('build_nixl_service')
+    py.extension_module('_service_bindings',
+               'nixl_service_bindings.cpp',
+               subdir: (cuda_wheel_dir),
+               dependencies: [nixl_dep, nixl_service_dep, pybind_dep],
+               include_directories: [nixl_inc_dirs, utils_inc_dirs, nixl_service_inc],
+               install: true)
+endif
+
 subdir('nixl-meta')

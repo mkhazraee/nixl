@@ -19,3 +19,7 @@ py.install_sources('_api.py', subdir: (cuda_wheel_dir))
 py.install_sources('__init__.py', subdir: (cuda_wheel_dir))
 py.install_sources('py.typed', subdir: (cuda_wheel_dir))
 py.install_sources('logging.py', subdir: (cuda_wheel_dir))
+
+if get_option('build_nixl_service')
+    py.install_sources('_service_api.py', subdir: (cuda_wheel_dir))
+endif

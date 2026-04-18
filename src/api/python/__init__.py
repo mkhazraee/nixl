@@ -32,3 +32,18 @@ __all__ = [
     "nixl_prepped_dlist_handle",
     "nixl_xfer_handle",
 ]
+
+try:
+    from ._service_api import (
+        nixl_service_agent,
+        nixl_service_agent_config,
+        nixl_service_xfer_handle,
+    )
+
+    __all__ += [
+        "nixl_service_agent",
+        "nixl_service_agent_config",
+        "nixl_service_xfer_handle",
+    ]
+except ImportError:
+    pass  # Service bindings not built (build_nixl_service=false)
