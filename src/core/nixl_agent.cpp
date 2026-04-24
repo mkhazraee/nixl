@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <iostream>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <numeric>
@@ -128,9 +128,10 @@ nixlXferReqH::updateRequestStats(nixlTelemetry *telemetry_pub,
                << duration.count() << "us.";
 }
 
-nixlDlistH::nixlDlistH(const std::string &remote_agent, descs_t &&descs)
+nixlDlistH::nixlDlistH(const std::string &remote_agent, descs_t &&descs, int total_count)
     : remoteAgent(remote_agent),
-      descs(std::move(descs)) {}
+      descs(std::move(descs)),
+      totalCount(total_count) {}
 
 /*** nixlAgentData constructor/destructor, as part of nixlAgent's ***/
 
@@ -651,12 +652,12 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
 
     // TODO [Perf]: Avoid heap allocation on the datapath, maybe use a mem pool
 
-    std::unordered_map<nixlBackendEngine *, std::unique_ptr<nixl_meta_dlist_t>> dlists;
+    nixlDlistH::descs_t dlists;
 
     for (const auto &backend : *backend_set) {
-        nixl_meta_dlist_t dlist(descs.getType());
+        nixl_stride_dlist_t dlist(descs.getType());
         if (section.populate(descs, backend, dlist) == NIXL_SUCCESS) {
-            dlists.try_emplace(backend, std::make_unique<nixl_meta_dlist_t>(std::move(dlist)));
+            dlists.emplace(backend, std::make_unique<nixl_stride_dlist_t>(std::move(dlist)));
         }
     }
 
@@ -673,7 +674,7 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
         return NIXL_ERR_NOT_FOUND;
     }
 
-    dlist_hndl = new nixlDlistH(agent_name, std::move(dlists));
+    dlist_hndl = new nixlDlistH(agent_name, std::move(dlists), descs.descCount());
     return NIXL_SUCCESS;
 }
 
@@ -684,6 +685,15 @@ nixlAgent::prepXferDlist(const nixl_xfer_dlist_t &descs,
     return prepXferDlist(NIXL_INIT_AGENT, descs, dlist_hndl, extra_params);
 }
 
+static int
+strideGetRecord(const nixl_stride_dlist_t &dlist, int flat_idx)
+{
+    auto it = std::upper_bound(dlist.begin(), dlist.end(), flat_idx,
+        [](int idx, const nixlStrideDesc &r) { return idx < r.start_idx; });
+    --it; // safe: first record has start_idx==0 and flat_idx>=0
+    return static_cast<int>(it - dlist.begin());
+}
+
 nixl_status_t
 nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                         const nixlDlistH* local_side,
@@ -692,6 +702,27 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                         const std::vector<int> &remote_indices,
                         nixlXferReqH* &req_hndl,
                         const nixl_opt_args_t* extra_params) const {
+
+    // Caches the current stride record to amortise binary search to O(1) per element
+    // when consecutive flat indices fall within the same record.
+    struct StrideState {
+        int                   rec_end = 0;
+        const nixlStrideDesc *rec     = nullptr;
+
+        void advance(const nixl_stride_dlist_t &dlist, int flat_idx) {
+            if (!rec || flat_idx < rec->start_idx || flat_idx >= rec_end) {
+                int pos = strideGetRecord(dlist, flat_idx);
+                rec     = &dlist[pos];
+                rec_end = rec->start_idx + rec->count;
+            }
+        }
+
+        nixlMetaDesc resolve(int flat_idx) const {
+            int local = flat_idx - rec->start_idx;
+            return nixlMetaDesc(rec->addr + static_cast<uintptr_t>(local) * rec->stride,
+                                rec->len, rec->devId, rec->metadataP);
+        }
+    };
 
     nixl_opt_b_args_t  opt_args;
     nixl_status_t      ret;
@@ -748,8 +779,12 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_INVALID_PARAM;
     }
 
-    const nixl_meta_dlist_t &local_descs = *local_side->descs.at(backend);
-    const nixl_meta_dlist_t &remote_descs = *remote_side->descs.at(backend);
+    const nixl_stride_dlist_t &local_dlist  = *local_side->descs.at(backend);
+    const nixl_stride_dlist_t &remote_dlist = *remote_side->descs.at(backend);
+    const int local_total  = local_side->totalCount;
+    const int remote_total = remote_side->totalCount;
+    const bool use_stride  = (local_dlist.descCount() < local_total) ||
+                             (remote_dlist.descCount() < remote_total);
     size_t total_bytes = 0;
 
     if ((desc_count == 0) || (remote_indices.size() == 0) ||
@@ -759,23 +794,36 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_INVALID_PARAM;
     }
 
-    for (int i=0; i<desc_count; ++i) {
-        if ((local_indices[i] >= local_descs.descCount()) || (local_indices[i] < 0)) {
-            NIXL_ERROR_FUNC << "local index out of range at index " << i << " with value "
-                            << local_indices[i];
-            return NIXL_ERR_INVALID_PARAM;
+    {
+        StrideState ls_v, rs_v;
+        for (int i=0; i<desc_count; ++i) {
+            if ((local_indices[i] >= local_total) || (local_indices[i] < 0)) {
+                NIXL_ERROR_FUNC << "local index out of range at index " << i << " with value "
+                                << local_indices[i];
+                return NIXL_ERR_INVALID_PARAM;
+            }
+            if ((remote_indices[i] >= remote_total) || (remote_indices[i] < 0)) {
+                NIXL_ERROR_FUNC << "remote index out of range at index " << i << " with value "
+                                << remote_indices[i];
+                return NIXL_ERR_INVALID_PARAM;
+            }
+            size_t l_len, r_len;
+            if (use_stride) {
+                ls_v.advance(local_dlist, local_indices[i]);
+                rs_v.advance(remote_dlist, remote_indices[i]);
+                l_len = ls_v.rec->len;
+                r_len = rs_v.rec->len;
+            } else {
+                l_len = local_dlist[local_indices[i]].len;
+                r_len = remote_dlist[remote_indices[i]].len;
+            }
+            if (l_len != r_len) {
+                NIXL_ERROR_FUNC << "length mismatch at index pair " << i << " with local index "
+                                << local_indices[i] << " and remote index " << remote_indices[i];
+                return NIXL_ERR_INVALID_PARAM;
+            }
+            total_bytes += l_len;
         }
-        if ((remote_indices[i] >= remote_descs.descCount()) || (remote_indices[i] < 0)) {
-            NIXL_ERROR_FUNC << "remote index out of range at index " << i << " with value "
-                            << remote_indices[i];
-            return NIXL_ERR_INVALID_PARAM;
-        }
-        if (local_descs[local_indices[i]].len != remote_descs[remote_indices[i]].len) {
-            NIXL_ERROR_FUNC << "length mismatch at index pair " << i << " with local index "
-                            << local_indices[i] << " and remote index " << remote_indices[i];
-            return NIXL_ERR_INVALID_PARAM;
-        }
-        total_bytes += local_descs[local_indices[i]].len;
     }
 
     if (extra_params) {
@@ -796,47 +844,98 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     auto handle = std::make_unique<nixlXferReqH>(remote_side->remoteAgent,
                                                  operation,
-                                                 local_descs.getType(),
-                                                 remote_descs.getType(),
+                                                 local_dlist.getType(),
+                                                 remote_dlist.getType(),
                                                  desc_count);
 
     if (extra_params && extra_params->skipDescMerge) {
-        for (int i=0; i<desc_count; ++i) {
-            (*handle->initiatorDescs)[i] = local_descs[local_indices[i]];
-            (*handle->targetDescs)[i] = remote_descs[remote_indices[i]];
+        if (!use_stride) {
+            for (int i=0; i<desc_count; ++i) {
+                (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
+                (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
+            }
+        } else {
+            StrideState ls, rs;
+            for (int i=0; i<desc_count; ++i) {
+                ls.advance(local_dlist, local_indices[i]);
+                rs.advance(remote_dlist, remote_indices[i]);
+                (*handle->initiatorDescs)[i] = ls.resolve(local_indices[i]);
+                (*handle->targetDescs)   [i] = rs.resolve(remote_indices[i]);
+            }
         }
     } else {
         int i = 0, j = 0; //final list size
-        while (i<(desc_count)) {
-            nixlMetaDesc local_desc1 = local_descs[local_indices[i]];
-            nixlMetaDesc remote_desc1 = remote_descs[remote_indices[i]];
+        if (!use_stride) {
+            while (i < desc_count) {
+                nixlMetaDesc local_desc1  = local_dlist[local_indices[i]];
+                nixlMetaDesc remote_desc1 = remote_dlist[remote_indices[i]];
 
-            if(i != (desc_count-1) ) {
-                const nixlMetaDesc *local_desc2 = &(local_descs[local_indices[i + 1]]);
-                const nixlMetaDesc *remote_desc2 = &(remote_descs[remote_indices[i + 1]]);
+                if (i != (desc_count - 1)) {
+                    const nixlStrideDesc *local_desc2  = &local_dlist[local_indices[i + 1]];
+                    const nixlStrideDesc *remote_desc2 = &remote_dlist[remote_indices[i + 1]];
 
-                while (((local_desc1.addr + local_desc1.len) == local_desc2->addr) &&
-                       ((remote_desc1.addr + remote_desc1.len) == remote_desc2->addr) &&
-                       (local_desc1.metadataP == local_desc2->metadataP) &&
-                       (remote_desc1.metadataP == remote_desc2->metadataP) &&
-                       (local_desc1.devId == local_desc2->devId) &&
-                       (remote_desc1.devId == remote_desc2->devId)) {
+                    while (((local_desc1.addr + local_desc1.len) == local_desc2->addr) &&
+                           ((remote_desc1.addr + remote_desc1.len) == remote_desc2->addr) &&
+                           (local_desc1.metadataP == local_desc2->metadataP) &&
+                           (remote_desc1.metadataP == remote_desc2->metadataP) &&
+                           (local_desc1.devId == local_desc2->devId) &&
+                           (remote_desc1.devId == remote_desc2->devId)) {
 
-                    local_desc1.len += local_desc2->len;
-                    remote_desc1.len += remote_desc2->len;
+                        local_desc1.len  += local_desc2->len;
+                        remote_desc1.len += remote_desc2->len;
 
-                    i++;
-                    if(i == (desc_count-1)) break;
+                        i++;
+                        if (i == (desc_count - 1)) break;
 
-                    local_desc2 = &(local_descs[local_indices[i + 1]]);
-                    remote_desc2 = &(remote_descs[remote_indices[i + 1]]);
+                        local_desc2  = &local_dlist[local_indices[i + 1]];
+                        remote_desc2 = &remote_dlist[remote_indices[i + 1]];
+                    }
                 }
-            }
 
-            (*handle->initiatorDescs)[j] = local_desc1;
-            (*handle->targetDescs)   [j] = remote_desc1;
-            j++;
-            i++;
+                (*handle->initiatorDescs)[j] = local_desc1;
+                (*handle->targetDescs)   [j] = remote_desc1;
+                j++;
+                i++;
+            }
+        } else {
+            StrideState ls, rs;
+            while (i < desc_count) {
+                ls.advance(local_dlist, local_indices[i]);
+                rs.advance(remote_dlist, remote_indices[i]);
+                nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
+                nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
+
+                if (i != (desc_count - 1)) {
+                    ls.advance(local_dlist, local_indices[i + 1]);
+                    rs.advance(remote_dlist, remote_indices[i + 1]);
+                    nixlMetaDesc local_desc2  = ls.resolve(local_indices[i + 1]);
+                    nixlMetaDesc remote_desc2 = rs.resolve(remote_indices[i + 1]);
+
+                    while (((local_desc1.addr + local_desc1.len) == local_desc2.addr) &&
+                           ((remote_desc1.addr + remote_desc1.len) == remote_desc2.addr) &&
+                           (local_desc1.metadataP == local_desc2.metadataP) &&
+                           (remote_desc1.metadataP == remote_desc2.metadataP) &&
+                           (local_desc1.devId == local_desc2.devId) &&
+                           (remote_desc1.devId == remote_desc2.devId)) {
+
+                        local_desc1.len  += local_desc2.len;
+                        remote_desc1.len += remote_desc2.len;
+
+                        i++;
+                        if (i == (desc_count - 1)) break;
+
+                        ls.advance(local_dlist, local_indices[i + 1]);
+                        rs.advance(remote_dlist, remote_indices[i + 1]);
+                        local_desc2  = ls.resolve(local_indices[i + 1]);
+                        remote_desc2 = rs.resolve(remote_indices[i + 1]);
+                    }
+                }
+
+                (*handle->initiatorDescs)[j] = local_desc1;
+                (*handle->targetDescs)   [j] = remote_desc1;
+                j++;
+                i++;
+            }
         }
         NIXL_DEBUG << "reqH descList size down to " << j;
         handle->initiatorDescs->resize(j);

@@ -105,6 +105,95 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
     return NIXL_SUCCESS;
 }
 
+nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
+                                        nixlBackendEngine* backend,
+                                        nixl_stride_dlist_t &resp) const {
+
+    if ((query.getType() != resp.getType()) || (query.isEmpty())) {
+        return NIXL_ERR_INVALID_PARAM;
+    }
+
+    const section_key_t sec_key(query.getType(), backend);
+    const auto it = sectionMap.find(sec_key);
+    if (it == sectionMap.end()) {
+        return NIXL_ERR_NOT_FOUND;
+    }
+
+    const nixlSecDescList &base = it->second;
+    int size = base.descCount();
+    int s_index = 0;
+    int n = query.descCount();
+    int accumulated = 0;
+
+    // Resolve first element
+    s_index = base.getCoveringIndex(query[0]);
+    if (s_index < 0) {
+        return NIXL_ERR_UNKNOWN;
+    }
+
+    int run_start = 0;
+    nixlBackendMD *run_meta = base[s_index].metadataP;
+    size_t run_stride = 0;
+    bool   run_stride_set = false;
+
+    auto flush_run = [&](int run_end) {
+        int cnt = run_end - run_start;
+        size_t stride = run_stride_set ? run_stride : query[run_start].len;
+        nixlStrideDesc rec(query[run_start].addr, query[run_start].len,
+                           query[run_start].devId, run_meta, stride, cnt);
+        rec.start_idx  = accumulated;
+        accumulated   += cnt;
+        resp.addDesc(rec);
+    };
+
+    for (int i = 1; i < n; ++i) {
+        if (__builtin_expect(query[i] < query[i - 1], 0)) {
+            // Backward element: flush the current run, start a fresh one from i.
+            flush_run(i);
+            run_start = i; run_stride = 0; run_stride_set = false;
+            s_index = base.getCoveringIndex(query[i]);
+            if (__builtin_expect(s_index < 0, 0)) {
+                resp.clear();
+                return NIXL_ERR_UNKNOWN;
+            }
+            run_meta = base[s_index].metadataP;
+            continue;
+        } else {
+            while (s_index < size && !base[s_index].covers(query[i]))
+                ++s_index;
+            if (__builtin_expect(s_index == size, 0)) {
+                resp.clear();
+                return NIXL_ERR_UNKNOWN;
+            }
+        }
+
+        nixlBackendMD *cur_meta = base[s_index].metadataP;
+        size_t cur_stride = static_cast<size_t>(
+            static_cast<intptr_t>(query[i].addr) - static_cast<intptr_t>(query[i - 1].addr));
+
+        bool same_meta  = (cur_meta == run_meta);
+        bool same_len   = (query[i].len == query[run_start].len);
+        bool same_devId = (query[i].devId == query[run_start].devId);
+        bool stride_ok  = !run_stride_set || (cur_stride == run_stride);
+
+        if (same_meta && same_len && same_devId && stride_ok) {
+            if (!run_stride_set) {
+                run_stride     = cur_stride;
+                run_stride_set = true;
+            }
+        } else {
+            flush_run(i);
+            run_start      = i;
+            run_meta       = cur_meta;
+            run_stride     = 0;
+            run_stride_set = false;
+        }
+    }
+    flush_run(n);
+
+    return NIXL_SUCCESS;
+}
+
 nixl_status_t
 nixlMemSection::addElement(const nixlRemoteDesc &query,
                            nixlBackendEngine *backend,

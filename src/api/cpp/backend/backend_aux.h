@@ -134,4 +134,24 @@ operator==(const nixlRemoteMetaDesc &lhs, const nixlRemoteMetaDesc &rhs) {
 typedef nixlDescList<nixlMetaDesc> nixl_meta_dlist_t;
 using nixl_remote_meta_dlist_t = nixlDescList<nixlRemoteMetaDesc>;
 
+// One uniform-stride run: addr/len/devId/metadataP are uniform across all
+// count elements; stride is bytes between element starts (stride==len → contiguous);
+// start_idx is the index of element 0 in the target list.
+class nixlStrideDesc : public nixlMetaDesc {
+public:
+    size_t stride    = 0;
+    int    count     = 0;
+    int    start_idx = 0;
+
+    nixlStrideDesc() = default;
+    using nixlMetaDesc::nixlMetaDesc; // needed by nixlDescList<nixlStrideDesc> template
+
+    nixlStrideDesc(uintptr_t addr, size_t len, uint64_t dev_id,
+                   nixlBackendMD *metadata, size_t stride_, int count_)
+        : nixlMetaDesc(addr, len, dev_id, metadata),
+          stride(stride_), count(count_), start_idx(0) {}
+};
+
+using nixl_stride_dlist_t = nixlDescList<nixlStrideDesc>;
+
 #endif

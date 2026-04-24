@@ -141,6 +141,10 @@ class nixlMemSection {
                                 nixlBackendEngine* backend,
                                 nixl_meta_dlist_t &resp) const;
 
+        nixl_status_t populate (const nixl_xfer_dlist_t &query,
+                                nixlBackendEngine* backend,
+                                nixl_stride_dlist_t &resp) const;
+
         [[nodiscard]] nixl_status_t
         addElement(const nixlRemoteDesc &query,
                    nixlBackendEngine *backend,
