@@ -842,100 +842,57 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_BACKEND;
     }
 
+    // skipDescMerge is deprecated. When use_stride is set, prep-time stride records
+    // make the merge cheaper than the old skip path. Without use_stride, the only mergeable
+    // case is different-size contiguous slots — not a real use case worth preserving.
+    if (extra_params && extra_params->skipDescMerge)
+        NIXL_WARN << "skipDescMerge is deprecated and will be removed in a future release";
+
     auto handle = std::make_unique<nixlXferReqH>(remote_side->remoteAgent,
                                                  operation,
                                                  local_dlist.getType(),
                                                  remote_dlist.getType(),
                                                  desc_count);
 
-    if (extra_params && extra_params->skipDescMerge) {
-        if (!use_stride) {
-            for (int i=0; i<desc_count; ++i) {
-                (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
-                (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
-            }
-        } else {
-            StrideState ls, rs;
-            for (int i=0; i<desc_count; ++i) {
-                ls.advance(local_dlist, local_indices[i]);
-                rs.advance(remote_dlist, remote_indices[i]);
-                (*handle->initiatorDescs)[i] = ls.resolve(local_indices[i]);
-                (*handle->targetDescs)   [i] = rs.resolve(remote_indices[i]);
-            }
+    if (!use_stride) {
+        for (int i=0; i<desc_count; ++i) {
+            (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
+            (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
         }
     } else {
-        int i = 0, j = 0; //final list size
-        if (!use_stride) {
-            while (i < desc_count) {
-                nixlMetaDesc local_desc1  = local_dlist[local_indices[i]];
-                nixlMetaDesc remote_desc1 = remote_dlist[remote_indices[i]];
+        // Prep-time stride records let us check contiguity via a multiply-compare
+        // per element instead of resolving each one — cheaper than skipping merges.
+        int i = 0, j = 0;
+        StrideState ls, rs;
+        while (i < desc_count) {
+            ls.advance(local_dlist, local_indices[i]);
+            rs.advance(remote_dlist, remote_indices[i]);
+            nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
+            nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
 
-                if (i != (desc_count - 1)) {
-                    const nixlStrideDesc *local_desc2  = &local_dlist[local_indices[i + 1]];
-                    const nixlStrideDesc *remote_desc2 = &remote_dlist[remote_indices[i + 1]];
+            // Address contiguity reduces to: delta * stride == len on each side.
+            while (i < desc_count - 1) {
+                const int lnext = local_indices[i + 1];
+                const int rnext = remote_indices[i + 1];
 
-                    while (((local_desc1.addr + local_desc1.len) == local_desc2->addr) &&
-                           ((remote_desc1.addr + remote_desc1.len) == remote_desc2->addr) &&
-                           (local_desc1.metadataP == local_desc2->metadataP) &&
-                           (remote_desc1.metadataP == remote_desc2->metadataP) &&
-                           (local_desc1.devId == local_desc2->devId) &&
-                           (remote_desc1.devId == remote_desc2->devId)) {
+                if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
+                    rnext < rs.rec->start_idx || rnext >= rs.rec_end)
+                    break;
 
-                        local_desc1.len  += local_desc2->len;
-                        remote_desc1.len += remote_desc2->len;
+                const int ld = lnext - local_indices[i];
+                const int rd = rnext - remote_indices[i];
+                if ((size_t)ld * ls.rec->stride != ls.rec->len ||
+                    (size_t)rd * rs.rec->stride != rs.rec->len)
+                    break;
 
-                        i++;
-                        if (i == (desc_count - 1)) break;
-
-                        local_desc2  = &local_dlist[local_indices[i + 1]];
-                        remote_desc2 = &remote_dlist[remote_indices[i + 1]];
-                    }
-                }
-
-                (*handle->initiatorDescs)[j] = local_desc1;
-                (*handle->targetDescs)   [j] = remote_desc1;
-                j++;
+                local_desc1.len  += ls.rec->len;
+                remote_desc1.len += rs.rec->len;
                 i++;
             }
-        } else {
-            StrideState ls, rs;
-            while (i < desc_count) {
-                ls.advance(local_dlist, local_indices[i]);
-                rs.advance(remote_dlist, remote_indices[i]);
-                nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
-                nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
-
-                if (i != (desc_count - 1)) {
-                    ls.advance(local_dlist, local_indices[i + 1]);
-                    rs.advance(remote_dlist, remote_indices[i + 1]);
-                    nixlMetaDesc local_desc2  = ls.resolve(local_indices[i + 1]);
-                    nixlMetaDesc remote_desc2 = rs.resolve(remote_indices[i + 1]);
-
-                    while (((local_desc1.addr + local_desc1.len) == local_desc2.addr) &&
-                           ((remote_desc1.addr + remote_desc1.len) == remote_desc2.addr) &&
-                           (local_desc1.metadataP == local_desc2.metadataP) &&
-                           (remote_desc1.metadataP == remote_desc2.metadataP) &&
-                           (local_desc1.devId == local_desc2.devId) &&
-                           (remote_desc1.devId == remote_desc2.devId)) {
-
-                        local_desc1.len  += local_desc2.len;
-                        remote_desc1.len += remote_desc2.len;
-
-                        i++;
-                        if (i == (desc_count - 1)) break;
-
-                        ls.advance(local_dlist, local_indices[i + 1]);
-                        rs.advance(remote_dlist, remote_indices[i + 1]);
-                        local_desc2  = ls.resolve(local_indices[i + 1]);
-                        remote_desc2 = rs.resolve(remote_indices[i + 1]);
-                    }
-                }
-
-                (*handle->initiatorDescs)[j] = local_desc1;
-                (*handle->targetDescs)   [j] = remote_desc1;
-                j++;
-                i++;
-            }
+            (*handle->initiatorDescs)[j] = local_desc1;
+            (*handle->targetDescs)   [j] = remote_desc1;
+            j++;
+            i++;
         }
         NIXL_DEBUG << "reqH descList size down to " << j;
         handle->initiatorDescs->resize(j);
