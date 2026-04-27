@@ -150,6 +150,12 @@ public:
                    nixlBackendMD *metadata, size_t stride_, int count_)
         : nixlMetaDesc(addr, len, dev_id, metadata),
           stride(stride_), count(count_), start_idx(0) {}
+
+    inline void print(const std::string &suffix) const {
+        nixlMetaDesc::print(", stride=" + std::to_string(stride) +
+                            " count=" + std::to_string(count) +
+                            " start_idx=" + std::to_string(start_idx) + suffix);
+    }
 };
 
 using nixl_stride_dlist_t = nixlDescList<nixlStrideDesc>;

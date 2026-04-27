@@ -100,6 +100,13 @@ nixlXferReqH::nixlXferReqH(const std::string &remote_agent,
       remoteAgent(remote_agent),
       backendOp(backend_op) {}
 
+nixlXferReqH::nixlXferReqH(const std::string &remote_agent,
+                           const nixl_xfer_op_t backend_op)
+    : initiatorDescs(nullptr),
+      targetDescs(nullptr),
+      remoteAgent(remote_agent),
+      backendOp(backend_op) {}
+
 void
 nixlXferReqH::updateRequestStats(nixlTelemetry *telemetry_pub,
                                  nixl_telemetry_stat_status_t stat_status) {
@@ -685,6 +692,9 @@ nixlAgent::prepXferDlist(const nixl_xfer_dlist_t &descs,
     return prepXferDlist(NIXL_INIT_AGENT, descs, dlist_hndl, extra_params);
 }
 
+// Returns the index of the stride record that contains flat_idx.
+// Precondition: dlist is non-empty (guaranteed by callers that guard on use_stride,
+// which requires at least one record) and 0 <= flat_idx < totalCount.
 static int
 strideGetRecord(const nixl_stride_dlist_t &dlist, int flat_idx)
 {
@@ -751,6 +761,12 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
         return NIXL_ERR_NOT_FOUND;
     }
+
+    // skipDescMerge is deprecated. When use_stride is set, prep-time stride records
+    // make the merge cheaper than the old skip path. Without use_stride, the only mergeable
+    // case is different-size contiguous slots — not a real use case worth preserving.
+    if (extra_params && extra_params->skipDescMerge)
+        NIXL_WARN << "skipDescMerge is deprecated and will be removed in a future release";
 
     if (extra_params && extra_params->backends.size() > 0) {
         for (auto & elm : extra_params->backends) {
@@ -842,78 +858,151 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_BACKEND;
     }
 
-    // skipDescMerge is deprecated. When use_stride is set, prep-time stride records
-    // make the merge cheaper than the old skip path. Without use_stride, the only mergeable
-    // case is different-size contiguous slots — not a real use case worth preserving.
-    if (extra_params && extra_params->skipDescMerge)
-        NIXL_WARN << "skipDescMerge is deprecated and will be removed in a future release";
+    std::unique_ptr<nixlXferReqH> handle;
 
-    auto handle = std::make_unique<nixlXferReqH>(remote_side->remoteAgent,
-                                                 operation,
-                                                 local_dlist.getType(),
-                                                 remote_dlist.getType(),
-                                                 desc_count);
+    if (backend->supportsStrides() && use_stride) {
+        auto sh = std::make_unique<nixlStrideXferReqH>(
+            remote_side->remoteAgent, operation,
+            local_dlist.getType(), remote_dlist.getType());
+        auto &iStride = *sh->initiatorStrideDescs;
+        auto &tStride = *sh->targetStrideDescs;
 
-    if (!use_stride) {
-        for (int i=0; i<desc_count; ++i) {
-            (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
-            (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
-        }
-    } else {
-        // Prep-time stride records let us check contiguity via a multiply-compare
-        // per element instead of resolving each one — cheaper than skipping merges.
-        int i = 0, j = 0;
         StrideState ls, rs;
+        int i = 0;
         while (i < desc_count) {
-            ls.advance(local_dlist, local_indices[i]);
-            rs.advance(remote_dlist, remote_indices[i]);
-            nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
-            nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
+            const int li0 = local_indices[i];
+            const int ri0 = remote_indices[i];
+            ls.advance(local_dlist, li0);
+            rs.advance(remote_dlist, ri0);
+            const nixlStrideDesc *lrec = ls.rec;
+            const nixlStrideDesc *rrec = rs.rec;
+            const int lrec_end = lrec->start_idx + lrec->count;
+            const int rrec_end = rrec->start_idx + rrec->count;
 
-            // Address contiguity reduces to: delta * stride == len on each side.
-            while (i < desc_count - 1) {
-                const int lnext = local_indices[i + 1];
-                const int rnext = remote_indices[i + 1];
+            int run_count = 1, local_delta = 0, remote_delta = 0;
+            bool delta_set = false;
 
-                if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
-                    rnext < rs.rec->start_idx || rnext >= rs.rec_end)
+            int j = i + 1;
+            while (j < desc_count) {
+                const int lj = local_indices[j];
+                const int rj = remote_indices[j];
+
+                // Break if either side leaves its current record
+                if (lj < lrec->start_idx || lj >= lrec_end ||
+                    rj < rrec->start_idx || rj >= rrec_end)
                     break;
 
-                const int ld = lnext - local_indices[i];
-                const int rd = rnext - remote_indices[i];
-                if ((size_t)ld * ls.rec->stride != ls.rec->len ||
-                    (size_t)rd * rs.rec->stride != rs.rec->len)
-                    break;
+                const int ld = lj - local_indices[j - 1];
+                const int rd = rj - remote_indices[j - 1];
 
-                local_desc1.len  += ls.rec->len;
-                remote_desc1.len += rs.rec->len;
+                if (!delta_set) {
+                    if (ld <= 0 || rd <= 0) break; // non-positive delta; end run
+                    local_delta  = ld;
+                    remote_delta = rd;
+                    delta_set    = true;
+                } else if (ld != local_delta || rd != remote_delta) {
+                    break;
+                }
+
+                ++run_count;
+                ++j;
+            }
+
+            nixlStrideDesc ldesc = *lrec;
+            ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
+            ldesc.stride    = delta_set ? (size_t)local_delta  * lrec->stride : lrec->stride;
+            ldesc.count     = run_count;
+            ldesc.start_idx = i;
+
+            nixlStrideDesc rdesc = *rrec;
+            rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
+            rdesc.stride    = delta_set ? (size_t)remote_delta * rrec->stride : rrec->stride;
+            rdesc.count     = run_count;
+            rdesc.start_idx = i;
+
+            iStride.addDesc(ldesc);
+            tStride.addDesc(rdesc);
+
+            i = j;
+        }
+
+        NIXL_DEBUG << "reqH strideDesc count down to " << iStride.descCount();
+        sh->engine   = backend;
+        sh->notifMsg = opt_args.notifMsg;
+        sh->hasNotif = opt_args.hasNotif;
+        if (data->telemetryEnabled) {
+            sh->telemetry.totalBytes = total_bytes;
+            sh->telemetry.descCount  = iStride.descCount();
+        }
+        ret = sh->engine->prepXfer(sh->backendOp,
+                                   iStride, tStride,
+                                   sh->remoteAgent, sh->backendHandle, &opt_args);
+        handle = std::move(sh);
+    } else {
+        handle = std::make_unique<nixlXferReqH>(remote_side->remoteAgent,
+                                                operation,
+                                                local_dlist.getType(),
+                                                remote_dlist.getType(),
+                                                desc_count);
+        if (!use_stride) {
+            for (int i=0; i<desc_count; ++i) {
+                (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
+                (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
+            }
+        } else {
+            // Prep-time stride records let us check contiguity via a multiply-compare
+            // per element instead of resolving each one — cheaper than skipping merges.
+            int i = 0, j = 0;
+            StrideState ls, rs;
+            while (i < desc_count) {
+                ls.advance(local_dlist, local_indices[i]);
+                rs.advance(remote_dlist, remote_indices[i]);
+                nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
+                nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
+
+                // Address contiguity reduces to: delta * stride == len on each side.
+                while (i < desc_count - 1) {
+                    const int lnext = local_indices[i + 1];
+                    const int rnext = remote_indices[i + 1];
+
+                    if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
+                        rnext < rs.rec->start_idx || rnext >= rs.rec_end)
+                        break;
+
+                    const int ld = lnext - local_indices[i];
+                    const int rd = rnext - remote_indices[i];
+                    if ((size_t)ld * ls.rec->stride != ls.rec->len ||
+                        (size_t)rd * rs.rec->stride != rs.rec->len)
+                        break;
+
+                    local_desc1.len  += ls.rec->len;
+                    remote_desc1.len += rs.rec->len;
+                    i++;
+                }
+
+                (*handle->initiatorDescs)[j] = local_desc1;
+                (*handle->targetDescs)   [j] = remote_desc1;
+                j++;
                 i++;
             }
-            (*handle->initiatorDescs)[j] = local_desc1;
-            (*handle->targetDescs)   [j] = remote_desc1;
-            j++;
-            i++;
+            NIXL_DEBUG << "reqH descList size down to " << j;
+            handle->initiatorDescs->resize(j);
+            handle->targetDescs->resize(j);
         }
-        NIXL_DEBUG << "reqH descList size down to " << j;
-        handle->initiatorDescs->resize(j);
-        handle->targetDescs->resize(j);
+        handle->engine   = backend;
+        handle->notifMsg = opt_args.notifMsg;
+        handle->hasNotif = opt_args.hasNotif;
+        if (data->telemetryEnabled) {
+            handle->telemetry.totalBytes = total_bytes;
+            handle->telemetry.descCount  = handle->initiatorDescs->descCount();
+        }
+        ret = handle->engine->prepXfer (handle->backendOp,
+                                        *handle->initiatorDescs,
+                                        *handle->targetDescs,
+                                        handle->remoteAgent,
+                                        handle->backendHandle,
+                                        &opt_args);
     }
-
-    handle->engine = backend;
-    handle->notifMsg = opt_args.notifMsg;
-    handle->hasNotif = opt_args.hasNotif;
-
-    if (data->telemetryEnabled) {
-        handle->telemetry.totalBytes = total_bytes;
-        handle->telemetry.descCount = handle->initiatorDescs->descCount();
-    }
-
-    ret = handle->engine->prepXfer (handle->backendOp,
-                                    *handle->initiatorDescs,
-                                    *handle->targetDescs,
-                                    handle->remoteAgent,
-                                    handle->backendHandle,
-                                    &opt_args);
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "backend '" << backend->getType()
                         << "' failed to prepare the transfer request with status " << ret;
@@ -988,27 +1077,40 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     }
 
     // TODO: when central KV is supported, add a call to fetchRemoteMD
-    // TODO: merge descriptors back to back in memory (like makeXferReq).
     // TODO [Perf]: Avoid heap allocation on the datapath, maybe use a mem pool
 
-    std::unique_ptr<nixlXferReqH> handle = std::make_unique<nixlXferReqH>(
-        remote_agent, operation, local_descs.getType(), remote_descs.getType());
+    std::unique_ptr<nixlXferReqH> handle;
 
     // Currently we loop through and find first local match. Can use a
     // preference list or more exhaustive search.
     for (auto &backend : backend_set) {
         // If populate fails, it clears the resp before return
-        ret1 = data->localSection_.populate(local_descs, backend, *handle->initiatorDescs);
-        ret2 = rem_sec_it->second.populate(remote_descs, backend, *handle->targetDescs);
-
-        if ((ret1 == NIXL_SUCCESS) && (ret2 == NIXL_SUCCESS)) {
-            NIXL_INFO << "Selected backend: " << backend->getType();
-            handle->engine = backend;
-            break;
+        if (backend->supportsStrides()) {
+            auto sh = std::make_unique<nixlStrideXferReqH>(
+                remote_agent, operation, local_descs.getType(), remote_descs.getType());
+            ret1 = data->localSection_.populate(local_descs, backend, *sh->initiatorStrideDescs);
+            ret2 = rem_sec_it->second.populate(remote_descs, backend, *sh->targetStrideDescs);
+            if ((ret1 == NIXL_SUCCESS) && (ret2 == NIXL_SUCCESS)) {
+                NIXL_INFO << "Selected backend: " << backend->getType();
+                sh->engine = backend;
+                handle = std::move(sh);
+                break;
+            }
+        } else {
+            auto fh = std::make_unique<nixlXferReqH>(
+                remote_agent, operation, local_descs.getType(), remote_descs.getType());
+            ret1 = data->localSection_.populate(local_descs, backend, *fh->initiatorDescs);
+            ret2 = rem_sec_it->second.populate(remote_descs, backend, *fh->targetDescs);
+            if ((ret1 == NIXL_SUCCESS) && (ret2 == NIXL_SUCCESS)) {
+                NIXL_INFO << "Selected backend: " << backend->getType();
+                fh->engine = backend;
+                handle = std::move(fh);
+                break;
+            }
         }
     }
 
-    if (!handle->engine) {
+    if (!handle) {
         NIXL_ERROR_FUNC << "no specified or potential backend had the required "
                            "registrations to be able to do the transfer";
         data->addErrorTelemetry(NIXL_ERR_NOT_FOUND);
@@ -1038,17 +1140,30 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     handle->notifMsg = opt_args.notifMsg;
     handle->hasNotif = opt_args.hasNotif;
 
-    if (data->telemetryEnabled) {
-        handle->telemetry.totalBytes = total_bytes;
-        handle->telemetry.descCount = handle->initiatorDescs->descCount();
+    if (handle->strided) {
+        auto *sh = static_cast<nixlStrideXferReqH *>(handle.get());
+        if (data->telemetryEnabled) {
+            handle->telemetry.totalBytes = total_bytes;
+            handle->telemetry.descCount  = sh->initiatorStrideDescs->descCount();
+        }
+        ret1 = handle->engine->prepXfer (handle->backendOp,
+                                         *sh->initiatorStrideDescs,
+                                         *sh->targetStrideDescs,
+                                         handle->remoteAgent,
+                                         handle->backendHandle,
+                                         &opt_args);
+    } else {
+        if (data->telemetryEnabled) {
+            handle->telemetry.totalBytes = total_bytes;
+            handle->telemetry.descCount  = handle->initiatorDescs->descCount();
+        }
+        ret1 = handle->engine->prepXfer (handle->backendOp,
+                                         *handle->initiatorDescs,
+                                         *handle->targetDescs,
+                                         handle->remoteAgent,
+                                         handle->backendHandle,
+                                         &opt_args);
     }
-
-    ret1 = handle->engine->prepXfer (handle->backendOp,
-                                     *handle->initiatorDescs,
-                                     *handle->targetDescs,
-                                     handle->remoteAgent,
-                                     handle->backendHandle,
-                                     &opt_args);
     if (ret1 != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "backend '" << handle->engine->getType()
                         << "' failed to prepare the transfer request with status " << ret1;
@@ -1086,15 +1201,28 @@ nixlAgent::estimateXferCost(const nixlXferReqH *req_hndl,
         return NIXL_ERR_UNKNOWN;
     }
 
-    ret = req_hndl->engine->estimateXferCost(req_hndl->backendOp,
-                                             *req_hndl->initiatorDescs,
-                                             *req_hndl->targetDescs,
-                                             req_hndl->remoteAgent,
-                                             req_hndl->backendHandle,
-                                             duration,
-                                             err_margin,
-                                             method,
-                                             extra_params);
+    if (req_hndl->strided) {
+        auto *sh = static_cast<const nixlStrideXferReqH *>(req_hndl);
+        ret = req_hndl->engine->estimateXferCost(req_hndl->backendOp,
+                                                 *sh->initiatorStrideDescs,
+                                                 *sh->targetStrideDescs,
+                                                 req_hndl->remoteAgent,
+                                                 req_hndl->backendHandle,
+                                                 duration,
+                                                 err_margin,
+                                                 method,
+                                                 extra_params);
+    } else {
+        ret = req_hndl->engine->estimateXferCost(req_hndl->backendOp,
+                                                 *req_hndl->initiatorDescs,
+                                                 *req_hndl->targetDescs,
+                                                 req_hndl->remoteAgent,
+                                                 req_hndl->backendHandle,
+                                                 duration,
+                                                 err_margin,
+                                                 method,
+                                                 extra_params);
+    }
     if (ret != NIXL_SUCCESS) {
         NIXL_ERROR_FUNC << "backend '" << req_hndl->engine->getType()
                         << "' failed to estimate the transfer cost with status " << ret;
@@ -1177,12 +1305,22 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
     }
 
     // If status is not NIXL_IN_PROG we can repost,
-    req_hndl->status = req_hndl->engine->postXfer(req_hndl->backendOp,
-                                                  *req_hndl->initiatorDescs,
-                                                  *req_hndl->targetDescs,
-                                                  req_hndl->remoteAgent,
-                                                  req_hndl->backendHandle,
-                                                  &opt_args);
+    if (req_hndl->strided) {
+        auto *sh = static_cast<nixlStrideXferReqH *>(req_hndl);
+        req_hndl->status = req_hndl->engine->postXfer(req_hndl->backendOp,
+                                                      *sh->initiatorStrideDescs,
+                                                      *sh->targetStrideDescs,
+                                                      req_hndl->remoteAgent,
+                                                      req_hndl->backendHandle,
+                                                      &opt_args);
+    } else {
+        req_hndl->status = req_hndl->engine->postXfer(req_hndl->backendOp,
+                                                      *req_hndl->initiatorDescs,
+                                                      *req_hndl->targetDescs,
+                                                      req_hndl->remoteAgent,
+                                                      req_hndl->backendHandle,
+                                                      &opt_args);
+    }
 
     if (req_hndl->status < 0) {
         if (req_hndl->status == NIXL_ERR_REMOTE_DISCONNECT) {
@@ -1198,7 +1336,12 @@ nixlAgent::postXferReq(nixlXferReqH *req_hndl,
     }
 
     if (data->telemetryEnabled) {
-        NIXL_DEBUG << req_hndl->initiatorDescs->to_string(true);
+        if (req_hndl->strided) {
+            auto *sh = static_cast<nixlStrideXferReqH *>(req_hndl);
+            NIXL_DEBUG << sh->initiatorStrideDescs->to_string(true);
+        } else {
+            NIXL_DEBUG << req_hndl->initiatorDescs->to_string(true);
+        }
 
         if (req_hndl->status < 0) {
             data->addErrorTelemetry(req_hndl->status);

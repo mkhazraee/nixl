@@ -42,7 +42,7 @@ public:
                  const nixl_mem_t remote_type,
                  const size_t desc_count = 0);
 
-    ~nixlXferReqH() {
+    virtual ~nixlXferReqH() {
         if ((backendHandle != nullptr) && (engine != nullptr)) {
             engine->releaseReqH(backendHandle);
         }
@@ -52,6 +52,13 @@ public:
     updateRequestStats(nixlTelemetry *telemetry, nixl_telemetry_stat_status_t stat_status);
 
     friend class nixlAgent;
+
+protected:
+    // Subclass constructor: leaves initiatorDescs/targetDescs as nullptr.
+    nixlXferReqH(const std::string &remote_agent,
+                 const nixl_xfer_op_t backend_op);
+
+    bool strided = false;
 
 private:
     nixlBackendEngine *engine = nullptr;
@@ -68,6 +75,26 @@ private:
     nixl_status_t status = NIXL_ERR_NOT_POSTED;
 
     nixl_xfer_telem_t telemetry;
+};
+
+// Stride transfer handle that can use nixlStrideDesc
+class nixlStrideXferReqH : public nixlXferReqH {
+public:
+    nixlStrideXferReqH(const std::string &remote_agent,
+                       const nixl_xfer_op_t backend_op,
+                       const nixl_mem_t local_type,
+                       const nixl_mem_t remote_type)
+        : nixlXferReqH(remote_agent, backend_op),
+          initiatorStrideDescs(std::make_unique<nixl_stride_dlist_t>(local_type)),
+          targetStrideDescs(std::make_unique<nixl_stride_dlist_t>(remote_type)) {
+        strided = true;
+    }
+
+    friend class nixlAgent;
+
+private:
+    const std::unique_ptr<nixl_stride_dlist_t> initiatorStrideDescs;
+    const std::unique_ptr<nixl_stride_dlist_t> targetStrideDescs;
 };
 
 struct nixlDlistH {

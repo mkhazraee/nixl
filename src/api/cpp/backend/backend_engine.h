@@ -108,6 +108,9 @@ class nixlBackendEngine {
         // pure virtual, and return errors, as parent shouldn't call if supportsNotif is false.
         virtual bool supportsNotif() const = 0;
 
+        // Determines if a backend supports strided transfer operations.
+        virtual bool supportsStrides() const { return false; }
+
         virtual nixl_mem_list_t getSupportedMems() const = 0;  // TODO: Return by const-reference and mark noexcept?
 
 
@@ -221,6 +224,29 @@ class nixlBackendEngine {
         }
 
 
+        // *** Needs to be implemented if supportsStrides() is true *** //
+
+        virtual nixl_status_t
+        prepXfer(const nixl_xfer_op_t &operation,
+                 const nixl_stride_dlist_t &local,
+                 const nixl_stride_dlist_t &remote,
+                 const std::string &remote_agent,
+                 nixlBackendReqH *&handle,
+                 const nixl_opt_b_args_t *opt_args = nullptr) const {
+            return NIXL_ERR_NOT_SUPPORTED;
+        }
+
+        virtual nixl_status_t
+        postXfer(const nixl_xfer_op_t &operation,
+                 const nixl_stride_dlist_t &local,
+                 const nixl_stride_dlist_t &remote,
+                 const std::string &remote_agent,
+                 nixlBackendReqH *&handle,
+                 const nixl_opt_b_args_t *opt_args = nullptr) const {
+            return NIXL_ERR_NOT_SUPPORTED;
+        }
+
+
         // *** Optional virtual methods that are good to be implemented in any backend *** //
 
         // Query information about a list of memory/storage
@@ -237,6 +263,19 @@ class nixlBackendEngine {
         estimateXferCost(const nixl_xfer_op_t &operation,
                          const nixl_meta_dlist_t &local,
                          const nixl_meta_dlist_t &remote,
+                         const std::string &remote_agent,
+                         nixlBackendReqH *const &handle,
+                         std::chrono::microseconds &duration,
+                         std::chrono::microseconds &err_margin,
+                         nixl_cost_t &method,
+                         const nixl_opt_args_t *extra_params = nullptr) const {
+            return NIXL_ERR_NOT_SUPPORTED;
+        }
+
+        virtual nixl_status_t
+        estimateXferCost(const nixl_xfer_op_t &operation,
+                         const nixl_stride_dlist_t &local,
+                         const nixl_stride_dlist_t &remote,
                          const std::string &remote_agent,
                          nixlBackendReqH *const &handle,
                          std::chrono::microseconds &duration,
