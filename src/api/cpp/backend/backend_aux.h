@@ -134,6 +134,9 @@ operator==(const nixlRemoteMetaDesc &lhs, const nixlRemoteMetaDesc &rhs) {
 typedef nixlDescList<nixlMetaDesc> nixl_meta_dlist_t;
 using nixl_remote_meta_dlist_t = nixlDescList<nixlRemoteMetaDesc>;
 
+// Minimum number of elements in a stride run to justify a strided WQE.
+constexpr int NIXL_STRIDE_MIN_COUNT = 4;
+
 // One uniform-stride run: addr/len/devId/metadataP are uniform across all
 // count elements; stride is bytes between element starts (stride==len → contiguous);
 // start_idx is the index of element 0 in the target list.

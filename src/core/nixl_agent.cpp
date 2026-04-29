@@ -908,20 +908,39 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                 ++j;
             }
 
-            nixlStrideDesc ldesc = *lrec;
-            ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
-            ldesc.stride    = delta_set ? (size_t)local_delta  * lrec->stride : lrec->stride;
-            ldesc.count     = run_count;
-            ldesc.start_idx = i;
+            if (run_count >= NIXL_STRIDE_MIN_COUNT) {
+                nixlStrideDesc ldesc = *lrec;
+                ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
+                ldesc.stride    = delta_set ? (size_t)local_delta  * lrec->stride : lrec->stride;
+                ldesc.count     = run_count;
+                ldesc.start_idx = i;
 
-            nixlStrideDesc rdesc = *rrec;
-            rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
-            rdesc.stride    = delta_set ? (size_t)remote_delta * rrec->stride : rrec->stride;
-            rdesc.count     = run_count;
-            rdesc.start_idx = i;
+                nixlStrideDesc rdesc = *rrec;
+                rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
+                rdesc.stride    = delta_set ? (size_t)remote_delta * rrec->stride : rrec->stride;
+                rdesc.count     = run_count;
+                rdesc.start_idx = i;
 
-            iStride.addDesc(ldesc);
-            tStride.addDesc(rdesc);
+                iStride.addDesc(ldesc);
+                tStride.addDesc(rdesc);
+            } else {
+                // Short run: emit individual count=1 records for plain WQEs
+                for (int k = i; k < j; ++k) {
+                    nixlStrideDesc ldesc = *lrec;
+                    ldesc.addr      = lrec->addr +
+                                      (uintptr_t)(local_indices[k] - lrec->start_idx) * lrec->stride;
+                    ldesc.count     = 1;
+                    ldesc.start_idx = k;
+                    iStride.addDesc(ldesc);
+
+                    nixlStrideDesc rdesc = *rrec;
+                    rdesc.addr      = rrec->addr +
+                                      (uintptr_t)(remote_indices[k] - rrec->start_idx) * rrec->stride;
+                    rdesc.count     = 1;
+                    rdesc.start_idx = k;
+                    tStride.addDesc(rdesc);
+                }
+            }
 
             i = j;
         }
