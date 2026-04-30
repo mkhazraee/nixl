@@ -753,7 +753,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_INVALID_PARAM;
     }
 
-    NIXL_LOCK_GUARD(data->lock);
+    NIXL_SHARED_LOCK_GUARD(data->lock);
     // The remote was invalidated in between prepXferDlist and this call
     if (data->remoteSections_.count(remote_side->remoteAgent) == 0) {
         NIXL_ERROR_FUNC << "remote agent '" << remote_side->remoteAgent
@@ -810,38 +810,6 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_INVALID_PARAM;
     }
 
-    {
-        StrideState ls_v, rs_v;
-        for (int i=0; i<desc_count; ++i) {
-            if ((local_indices[i] >= local_total) || (local_indices[i] < 0)) {
-                NIXL_ERROR_FUNC << "local index out of range at index " << i << " with value "
-                                << local_indices[i];
-                return NIXL_ERR_INVALID_PARAM;
-            }
-            if ((remote_indices[i] >= remote_total) || (remote_indices[i] < 0)) {
-                NIXL_ERROR_FUNC << "remote index out of range at index " << i << " with value "
-                                << remote_indices[i];
-                return NIXL_ERR_INVALID_PARAM;
-            }
-            size_t l_len, r_len;
-            if (use_stride) {
-                ls_v.advance(local_dlist, local_indices[i]);
-                rs_v.advance(remote_dlist, remote_indices[i]);
-                l_len = ls_v.rec->len;
-                r_len = rs_v.rec->len;
-            } else {
-                l_len = local_dlist[local_indices[i]].len;
-                r_len = remote_dlist[remote_indices[i]].len;
-            }
-            if (l_len != r_len) {
-                NIXL_ERROR_FUNC << "length mismatch at index pair " << i << " with local index "
-                                << local_indices[i] << " and remote index " << remote_indices[i];
-                return NIXL_ERR_INVALID_PARAM;
-            }
-            total_bytes += l_len;
-        }
-    }
-
     if (extra_params) {
         if (extra_params->notif) {
             opt_args.notifMsg = *extra_params->notif;
@@ -860,6 +828,34 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     std::unique_ptr<nixlXferReqH> handle;
 
+    // Returns NIXL_ERR_INVALID_PARAM (and logs) if either index is out of range.
+    auto validate_idx_pair = [&](int li, int ri, int pos) -> nixl_status_t {
+        if ((li < 0) || (li >= local_total)) {
+            NIXL_ERROR_FUNC << "local index out of range at index " << pos
+                            << " with value " << li;
+            return NIXL_ERR_INVALID_PARAM;
+        }
+        if ((ri < 0) || (ri >= remote_total)) {
+            NIXL_ERROR_FUNC << "remote index out of range at index " << pos
+                            << " with value " << ri;
+            return NIXL_ERR_INVALID_PARAM;
+        }
+        return NIXL_SUCCESS;
+    };
+
+    // Returns NIXL_ERR_INVALID_PARAM (and logs) if lengths don't match.
+    auto validate_len_pair = [&](size_t l_len, size_t r_len, int li, int ri, int pos) -> nixl_status_t {
+        if (l_len != r_len) {
+            NIXL_ERROR_FUNC << "length mismatch at index pair " << pos
+                            << " with local index " << li
+                            << " and remote index " << ri;
+            return NIXL_ERR_INVALID_PARAM;
+        }
+        return NIXL_SUCCESS;
+    };
+
+    // Single-pass: validate indices/lengths and build descriptors together.
+    // On error the unique_ptr cleans up the partially-built handle.
     if (backend->supportsStrides() && use_stride) {
         auto sh = std::make_unique<nixlStrideXferReqH>(
             remote_side->remoteAgent, operation,
@@ -872,12 +868,19 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         while (i < desc_count) {
             const int li0 = local_indices[i];
             const int ri0 = remote_indices[i];
+
+            if ((ret = validate_idx_pair(li0, ri0, i)) != NIXL_SUCCESS) return ret;
+
             ls.advance(local_dlist, li0);
             rs.advance(remote_dlist, ri0);
             const nixlStrideDesc *lrec = ls.rec;
             const nixlStrideDesc *rrec = rs.rec;
             const int lrec_end = lrec->start_idx + lrec->count;
             const int rrec_end = rrec->start_idx + rrec->count;
+
+            // Length equality holds for all elements in this run (same record ⟹ same len).
+            if ((ret = validate_len_pair(lrec->len, rrec->len, li0, ri0, i)) != NIXL_SUCCESS)
+                return ret;
 
             int run_count = 1, local_delta = 0, remote_delta = 0;
             bool delta_set = false;
@@ -886,6 +889,8 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             while (j < desc_count) {
                 const int lj = local_indices[j];
                 const int rj = remote_indices[j];
+
+                if ((ret = validate_idx_pair(lj, rj, j)) != NIXL_SUCCESS) return ret;
 
                 // Break if either side leaves its current record
                 if (lj < lrec->start_idx || lj >= lrec_end ||
@@ -907,6 +912,9 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                 ++run_count;
                 ++j;
             }
+
+            // All elements in the run share lrec->len (same record); accumulate once.
+            total_bytes += (size_t)run_count * lrec->len;
 
             if (run_count >= NIXL_STRIDE_MIN_COUNT) {
                 nixlStrideDesc ldesc = *lrec;
@@ -964,9 +972,16 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                                                 remote_dlist.getType(),
                                                 desc_count);
         if (!use_stride) {
-            for (int i=0; i<desc_count; ++i) {
-                (*handle->initiatorDescs)[i] = local_dlist[local_indices[i]];
-                (*handle->targetDescs)   [i] = remote_dlist[remote_indices[i]];
+            for (int i = 0; i < desc_count; ++i) {
+                if ((ret = validate_idx_pair(local_indices[i], remote_indices[i], i)) != NIXL_SUCCESS)
+                    return ret;
+                const auto &ld = local_dlist[local_indices[i]];
+                const auto &rd = remote_dlist[remote_indices[i]];
+                if ((ret = validate_len_pair(ld.len, rd.len, local_indices[i], remote_indices[i], i)) != NIXL_SUCCESS)
+                    return ret;
+                total_bytes += ld.len;
+                (*handle->initiatorDescs)[i] = ld;
+                (*handle->targetDescs)   [i] = rd;
             }
         } else {
             // Prep-time stride records let us check contiguity via a multiply-compare
@@ -974,15 +989,25 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             int i = 0, j = 0;
             StrideState ls, rs;
             while (i < desc_count) {
+                if ((ret = validate_idx_pair(local_indices[i], remote_indices[i], i)) != NIXL_SUCCESS)
+                    return ret;
                 ls.advance(local_dlist, local_indices[i]);
                 rs.advance(remote_dlist, remote_indices[i]);
                 nixlMetaDesc local_desc1  = ls.resolve(local_indices[i]);
                 nixlMetaDesc remote_desc1 = rs.resolve(remote_indices[i]);
 
+                if ((ret = validate_len_pair(local_desc1.len, remote_desc1.len, local_indices[i], remote_indices[i], i)) != NIXL_SUCCESS)
+                    return ret;
+                total_bytes += local_desc1.len;
+
                 // Address contiguity reduces to: delta * stride == len on each side.
                 while (i < desc_count - 1) {
                     const int lnext = local_indices[i + 1];
                     const int rnext = remote_indices[i + 1];
+
+                    if ((lnext < 0) || (lnext >= local_total) ||
+                        (rnext < 0) || (rnext >= remote_total))
+                        break;
 
                     if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
                         rnext < rs.rec->start_idx || rnext >= rs.rec_end)
@@ -994,6 +1019,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                         (size_t)rd * rs.rec->stride != rs.rec->len)
                         break;
 
+                    total_bytes      += ls.rec->len;
                     local_desc1.len  += ls.rec->len;
                     remote_desc1.len += rs.rec->len;
                     i++;
