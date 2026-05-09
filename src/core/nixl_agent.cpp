@@ -762,11 +762,11 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         return NIXL_ERR_NOT_FOUND;
     }
 
-    // skipDescMerge is deprecated. When use_stride is set, prep-time stride records
-    // make the merge cheaper than the old skip path. Without use_stride, the only mergeable
-    // case is different-size contiguous slots — not a real use case worth preserving.
+    // skipDescMerge is deprecated. When use_stride is set, prep-time stride records make
+    // the merge cheaper than the old skip path. Without use_stride, the only missing mergeable
+    // case is different-size contiguous slots; not a real use case worth preserving.
     if (extra_params && extra_params->skipDescMerge)
-        NIXL_WARN << "skipDescMerge is deprecated and will be removed in a future release";
+        NIXL_DEBUG << "skipDescMerge is deprecated and will be removed in a future release";
 
     if (extra_params && extra_params->backends.size() > 0) {
         for (auto & elm : extra_params->backends) {
@@ -878,7 +878,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             const int lrec_end = lrec->start_idx + lrec->count;
             const int rrec_end = rrec->start_idx + rrec->count;
 
-            // Length equality holds for all elements in this run (same record ⟹ same len).
+            // Length equality holds for all elements in this run (same record => same len).
             if ((ret = validate_len_pair(lrec->len, rrec->len, li0, ri0, i)) != NIXL_SUCCESS)
                 return ret;
 
@@ -1020,7 +1020,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             }
         } else {
             // Prep-time stride records let us check contiguity via a multiply-compare
-            // per element instead of resolving each one — cheaper than skipping merges.
+            // per element instead of resolving each one; cheaper than skipping merges.
             int i = 0, j = 0;
             StrideState ls, rs;
             while (i < desc_count) {
@@ -1181,11 +1181,82 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
     for (auto &backend : backend_set) {
         // If populate fails, it clears the resp before return
         if (backend->supportsStrides()) {
-            auto sh = std::make_unique<nixlStrideXferReqH>(
-                remote_agent, operation, local_descs.getType(), remote_descs.getType());
-            ret1 = data->localSection_.populate(local_descs, backend, *sh->initiatorStrideDescs);
-            ret2 = rem_sec_it->second.populate(remote_descs, backend, *sh->targetStrideDescs);
+            nixl_stride_dlist_t local_strides(local_descs.getType());
+            nixl_stride_dlist_t remote_strides(remote_descs.getType());
+            ret1 = data->localSection_.populate(local_descs, backend, local_strides);
+            ret2 = rem_sec_it->second.populate(remote_descs, backend, remote_strides);
             if ((ret1 == NIXL_SUCCESS) && (ret2 == NIXL_SUCCESS)) {
+                auto sh = std::make_unique<nixlStrideXferReqH>(
+                    remote_agent, operation, local_descs.getType(), remote_descs.getType());
+                auto &local_aligned = *sh->initiatorStrideDescs;
+                auto &remote_aligned = *sh->targetStrideDescs;
+                int local_pos = 0, remote_pos = 0, flat_idx = 0;
+                bool aligned = true;
+
+                while (flat_idx < local_descs.descCount()) {
+                    if (local_pos >= local_strides.descCount() ||
+                        remote_pos >= remote_strides.descCount()) {
+                        aligned = false;
+                        break;
+                    }
+
+                    const nixlStrideDesc &local_rec = local_strides[local_pos];
+                    const nixlStrideDesc &remote_rec = remote_strides[remote_pos];
+                    const int local_end = local_rec.start_idx + local_rec.count;
+                    const int remote_end = remote_rec.start_idx + remote_rec.count;
+
+                    if (flat_idx < local_rec.start_idx || flat_idx >= local_end ||
+                        flat_idx < remote_rec.start_idx || flat_idx >= remote_end ||
+                        local_rec.len != remote_rec.len) {
+                        aligned = false;
+                        break;
+                    }
+
+                    const int run_end = std::min(local_end, remote_end);
+                    const int count = run_end - flat_idx;
+                    if (count >= NIXL_STRIDE_MIN_COUNT) {
+                        nixlStrideDesc local_desc = local_rec;
+                        local_desc.addr = local_rec.addr +
+                            (uintptr_t)(flat_idx - local_rec.start_idx) * local_rec.stride;
+                        local_desc.count = count;
+                        local_desc.start_idx = flat_idx;
+                        local_aligned.addDesc(local_desc);
+
+                        nixlStrideDesc remote_desc = remote_rec;
+                        remote_desc.addr = remote_rec.addr +
+                            (uintptr_t)(flat_idx - remote_rec.start_idx) * remote_rec.stride;
+                        remote_desc.count = count;
+                        remote_desc.start_idx = flat_idx;
+                        remote_aligned.addDesc(remote_desc);
+                    } else {
+                        for (int i = 0; i < count; ++i) {
+                            const int idx = flat_idx + i;
+                            nixlStrideDesc local_desc = local_rec;
+                            local_desc.addr = local_rec.addr +
+                                (uintptr_t)(idx - local_rec.start_idx) * local_rec.stride;
+                            local_desc.count = 1;
+                            local_desc.start_idx = idx;
+                            local_aligned.addDesc(local_desc);
+
+                            nixlStrideDesc remote_desc = remote_rec;
+                            remote_desc.addr = remote_rec.addr +
+                                (uintptr_t)(idx - remote_rec.start_idx) * remote_rec.stride;
+                            remote_desc.count = 1;
+                            remote_desc.start_idx = idx;
+                            remote_aligned.addDesc(remote_desc);
+                        }
+                    }
+
+                    flat_idx = run_end;
+                    if (flat_idx == local_end)
+                        ++local_pos;
+                    if (flat_idx == remote_end)
+                        ++remote_pos;
+                }
+
+                if (!aligned)
+                    continue;
+
                 NIXL_INFO << "Selected backend: " << backend->getType();
                 sh->engine = backend;
                 handle = std::move(sh);

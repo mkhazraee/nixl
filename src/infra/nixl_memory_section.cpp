@@ -138,22 +138,12 @@ nixl_status_t nixlMemSection::populate (const nixl_xfer_dlist_t &query,
 
     auto flush_run = [&](int run_end) {
         int cnt = run_end - run_start;
-        if (cnt >= NIXL_STRIDE_MIN_COUNT) {
-            size_t stride = run_stride_set ? run_stride : query[run_start].len;
-            nixlStrideDesc rec(query[run_start].addr, query[run_start].len,
-                               query[run_start].devId, run_meta, stride, cnt);
-            rec.start_idx  = accumulated;
-            accumulated   += cnt;
-            resp.addDesc(rec);
-        } else {
-            // Short run: emit individual count=1 records, not useful for strided post
-            for (int k = run_start; k < run_end; ++k) {
-                nixlStrideDesc rec(query[k].addr, query[k].len,
-                                   query[k].devId, run_meta, query[k].len, 1);
-                rec.start_idx = accumulated++;
-                resp.addDesc(rec);
-            }
-        }
+        size_t stride = run_stride_set ? run_stride : query[run_start].len;
+        nixlStrideDesc rec(query[run_start].addr, query[run_start].len,
+                           query[run_start].devId, run_meta, stride, cnt);
+        rec.start_idx  = accumulated;
+        accumulated   += cnt;
+        resp.addDesc(rec);
     };
 
     for (int i = 1; i < n; ++i) {
