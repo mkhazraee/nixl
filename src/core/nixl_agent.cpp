@@ -629,7 +629,7 @@ nixlAgent::prepXferDlist (const std::string &agent_name,
     backend_set_t *backend_set;
     const bool init_side = (agent_name == NIXL_INIT_AGENT);
 
-    NIXL_LOCK_GUARD(data->lock);
+    NIXL_SHARED_LOCK_GUARD(data->lock);
     // When central KV is supported, still it should return error,
     // just we can add a call to fetchRemoteMD for next time
     const auto rem_sec_it = data->remoteSections_.find(agent_name);
@@ -704,6 +704,63 @@ strideGetRecord(const nixl_stride_dlist_t &dlist, int flat_idx)
     return static_cast<int>(it - dlist.begin());
 }
 
+static nixlStrideDesc
+makeStrideSubdesc(const nixlStrideDesc &rec, int flat_idx, int count, int start_idx)
+{
+    nixlStrideDesc desc = rec;
+    desc.addr      = rec.addr + static_cast<uintptr_t>(flat_idx - rec.start_idx) * rec.stride;
+    desc.count     = count;
+    desc.start_idx = start_idx;
+    return desc;
+}
+
+static bool
+alignStrideDlists(const nixl_stride_dlist_t &local_strides,
+                  const nixl_stride_dlist_t &remote_strides,
+                  int desc_count,
+                  nixl_stride_dlist_t &local_aligned,
+                  nixl_stride_dlist_t &remote_aligned)
+{
+    int local_pos = 0, remote_pos = 0, flat_idx = 0;
+
+    while (flat_idx < desc_count) {
+        if (local_pos >= local_strides.descCount() ||
+            remote_pos >= remote_strides.descCount())
+            return false;
+
+        const nixlStrideDesc &local_rec = local_strides[local_pos];
+        const nixlStrideDesc &remote_rec = remote_strides[remote_pos];
+        const int local_end = local_rec.start_idx + local_rec.count;
+        const int remote_end = remote_rec.start_idx + remote_rec.count;
+
+        if (flat_idx < local_rec.start_idx || flat_idx >= local_end ||
+            flat_idx < remote_rec.start_idx || flat_idx >= remote_end ||
+            local_rec.len != remote_rec.len)
+            return false;
+
+        const int run_end = std::min(local_end, remote_end);
+        const int count = run_end - flat_idx;
+        if (count >= NIXL_STRIDE_MIN_COUNT) {
+            local_aligned.addDesc(makeStrideSubdesc(local_rec, flat_idx, count, flat_idx));
+            remote_aligned.addDesc(makeStrideSubdesc(remote_rec, flat_idx, count, flat_idx));
+        } else {
+            for (int i = 0; i < count; ++i) {
+                const int idx = flat_idx + i;
+                local_aligned.addDesc(makeStrideSubdesc(local_rec, idx, 1, idx));
+                remote_aligned.addDesc(makeStrideSubdesc(remote_rec, idx, 1, idx));
+            }
+        }
+
+        flat_idx = run_end;
+        if (flat_idx == local_end)
+            ++local_pos;
+        if (flat_idx == remote_end)
+            ++remote_pos;
+    }
+
+    return true;
+}
+
 nixl_status_t
 nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                         const nixlDlistH* local_side,
@@ -712,7 +769,6 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                         const std::vector<int> &remote_indices,
                         nixlXferReqH* &req_hndl,
                         const nixl_opt_args_t* extra_params) const {
-
     // Caches the current stride record to amortise binary search to O(1) per element
     // when consecutive flat indices fall within the same record.
     struct StrideState {
@@ -778,14 +834,10 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
         }
     } else {
         for (auto & loc_bknd : local_side->descs) {
-            for (auto & rem_bknd : remote_side->descs) {
-                if (loc_bknd.first == rem_bknd.first) {
-                    backend = loc_bknd.first;
-                    break;
-                }
-            }
-            if (backend)
+            if (remote_side->descs.count(loc_bknd.first) > 0) {
+                backend = loc_bknd.first;
                 break;
+            }
         }
     }
 
@@ -818,6 +870,8 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             opt_args.notifMsg = extra_params->notifMsg;
             opt_args.hasNotif = true;
         }
+        if (extra_params->customParam.length() > 0)
+            opt_args.customParam = extra_params->customParam;
     }
 
     if ((opt_args.hasNotif) && (!backend->supportsNotif())) {
@@ -935,52 +989,32 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             }
 
             if (contiguous_run) {
-                nixlStrideDesc ldesc = *lrec;
-                ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
+                nixlStrideDesc ldesc = makeStrideSubdesc(*lrec, li0, 1, i);
                 ldesc.len       = (size_t)run_count * lrec->len;
                 ldesc.stride    = ldesc.len;
-                ldesc.count     = 1;
-                ldesc.start_idx = i;
 
-                nixlStrideDesc rdesc = *rrec;
-                rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
+                nixlStrideDesc rdesc = makeStrideSubdesc(*rrec, ri0, 1, i);
                 rdesc.len       = (size_t)run_count * rrec->len;
                 rdesc.stride    = rdesc.len;
-                rdesc.count     = 1;
-                rdesc.start_idx = i;
 
                 iStride.addDesc(ldesc);
                 tStride.addDesc(rdesc);
             } else if (run_count >= NIXL_STRIDE_MIN_COUNT) {
-                nixlStrideDesc ldesc = *lrec;
-                ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
+                nixlStrideDesc ldesc = makeStrideSubdesc(*lrec, li0, run_count, i);
                 ldesc.stride    = local_run_stride;
-                ldesc.count     = run_count;
-                ldesc.start_idx = i;
 
-                nixlStrideDesc rdesc = *rrec;
-                rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
+                nixlStrideDesc rdesc = makeStrideSubdesc(*rrec, ri0, run_count, i);
                 rdesc.stride    = remote_run_stride;
-                rdesc.count     = run_count;
-                rdesc.start_idx = i;
 
                 iStride.addDesc(ldesc);
                 tStride.addDesc(rdesc);
             } else {
                 // Short run: emit individual count=1 records for plain WQEs
                 for (int k = i; k < j; ++k) {
-                    nixlStrideDesc ldesc = *lrec;
-                    ldesc.addr      = lrec->addr +
-                                      (uintptr_t)(local_indices[k] - lrec->start_idx) * lrec->stride;
-                    ldesc.count     = 1;
-                    ldesc.start_idx = k;
+                    nixlStrideDesc ldesc = makeStrideSubdesc(*lrec, local_indices[k], 1, k);
                     iStride.addDesc(ldesc);
 
-                    nixlStrideDesc rdesc = *rrec;
-                    rdesc.addr      = rrec->addr +
-                                      (uintptr_t)(remote_indices[k] - rrec->start_idx) * rrec->stride;
-                    rdesc.count     = 1;
-                    rdesc.start_idx = k;
+                    nixlStrideDesc rdesc = makeStrideSubdesc(*rrec, remote_indices[k], 1, k);
                     tStride.addDesc(rdesc);
                 }
             }
@@ -1188,73 +1222,8 @@ nixlAgent::createXferReq(const nixl_xfer_op_t &operation,
             if ((ret1 == NIXL_SUCCESS) && (ret2 == NIXL_SUCCESS)) {
                 auto sh = std::make_unique<nixlStrideXferReqH>(
                     remote_agent, operation, local_descs.getType(), remote_descs.getType());
-                auto &local_aligned = *sh->initiatorStrideDescs;
-                auto &remote_aligned = *sh->targetStrideDescs;
-                int local_pos = 0, remote_pos = 0, flat_idx = 0;
-                bool aligned = true;
-
-                while (flat_idx < local_descs.descCount()) {
-                    if (local_pos >= local_strides.descCount() ||
-                        remote_pos >= remote_strides.descCount()) {
-                        aligned = false;
-                        break;
-                    }
-
-                    const nixlStrideDesc &local_rec = local_strides[local_pos];
-                    const nixlStrideDesc &remote_rec = remote_strides[remote_pos];
-                    const int local_end = local_rec.start_idx + local_rec.count;
-                    const int remote_end = remote_rec.start_idx + remote_rec.count;
-
-                    if (flat_idx < local_rec.start_idx || flat_idx >= local_end ||
-                        flat_idx < remote_rec.start_idx || flat_idx >= remote_end ||
-                        local_rec.len != remote_rec.len) {
-                        aligned = false;
-                        break;
-                    }
-
-                    const int run_end = std::min(local_end, remote_end);
-                    const int count = run_end - flat_idx;
-                    if (count >= NIXL_STRIDE_MIN_COUNT) {
-                        nixlStrideDesc local_desc = local_rec;
-                        local_desc.addr = local_rec.addr +
-                            (uintptr_t)(flat_idx - local_rec.start_idx) * local_rec.stride;
-                        local_desc.count = count;
-                        local_desc.start_idx = flat_idx;
-                        local_aligned.addDesc(local_desc);
-
-                        nixlStrideDesc remote_desc = remote_rec;
-                        remote_desc.addr = remote_rec.addr +
-                            (uintptr_t)(flat_idx - remote_rec.start_idx) * remote_rec.stride;
-                        remote_desc.count = count;
-                        remote_desc.start_idx = flat_idx;
-                        remote_aligned.addDesc(remote_desc);
-                    } else {
-                        for (int i = 0; i < count; ++i) {
-                            const int idx = flat_idx + i;
-                            nixlStrideDesc local_desc = local_rec;
-                            local_desc.addr = local_rec.addr +
-                                (uintptr_t)(idx - local_rec.start_idx) * local_rec.stride;
-                            local_desc.count = 1;
-                            local_desc.start_idx = idx;
-                            local_aligned.addDesc(local_desc);
-
-                            nixlStrideDesc remote_desc = remote_rec;
-                            remote_desc.addr = remote_rec.addr +
-                                (uintptr_t)(idx - remote_rec.start_idx) * remote_rec.stride;
-                            remote_desc.count = 1;
-                            remote_desc.start_idx = idx;
-                            remote_aligned.addDesc(remote_desc);
-                        }
-                    }
-
-                    flat_idx = run_end;
-                    if (flat_idx == local_end)
-                        ++local_pos;
-                    if (flat_idx == remote_end)
-                        ++remote_pos;
-                }
-
-                if (!aligned)
+                if (!alignStrideDlists(local_strides, remote_strides, local_descs.descCount(),
+                                       *sh->initiatorStrideDescs, *sh->targetStrideDescs))
                     continue;
 
                 NIXL_INFO << "Selected backend: " << backend->getType();
