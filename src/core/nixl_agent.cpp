@@ -890,9 +890,9 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                 const int lj = local_indices[j];
                 const int rj = remote_indices[j];
 
-                if ((ret = validate_idx_pair(lj, rj, j)) != NIXL_SUCCESS) return ret;
-
-                // Break if either side leaves its current record
+                // Break if either side leaves its current record. If the next
+                // element is out of range, it cannot be in the current record
+                // and will be reported by the next outer-loop validation.
                 if (lj < lrec->start_idx || lj >= lrec_end ||
                     rj < rrec->start_idx || rj >= rrec_end)
                     break;
