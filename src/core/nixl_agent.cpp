@@ -916,16 +916,51 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
             // All elements in the run share lrec->len (same record); accumulate once.
             total_bytes += (size_t)run_count * lrec->len;
 
-            if (run_count >= NIXL_STRIDE_MIN_COUNT) {
+            bool contiguous_run = false;
+            size_t local_run_stride = lrec->stride;
+            size_t remote_run_stride = rrec->stride;
+            if (run_count > 1) {
+                if (local_delta == 1 && remote_delta == 1 &&
+                    lrec->stride == lrec->len && rrec->stride == rrec->len) {
+                    local_run_stride = lrec->len;
+                    remote_run_stride = rrec->len;
+                    contiguous_run = true;
+                } else if (run_count >= NIXL_STRIDE_MIN_COUNT ||
+                           (lrec->stride <= lrec->len && rrec->stride <= rrec->len)) {
+                    local_run_stride = (size_t)local_delta * lrec->stride;
+                    remote_run_stride = (size_t)remote_delta * rrec->stride;
+                    contiguous_run = (local_run_stride == lrec->len) &&
+                                     (remote_run_stride == rrec->len);
+                }
+            }
+
+            if (contiguous_run) {
                 nixlStrideDesc ldesc = *lrec;
                 ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
-                ldesc.stride    = delta_set ? (size_t)local_delta  * lrec->stride : lrec->stride;
+                ldesc.len       = (size_t)run_count * lrec->len;
+                ldesc.stride    = ldesc.len;
+                ldesc.count     = 1;
+                ldesc.start_idx = i;
+
+                nixlStrideDesc rdesc = *rrec;
+                rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
+                rdesc.len       = (size_t)run_count * rrec->len;
+                rdesc.stride    = rdesc.len;
+                rdesc.count     = 1;
+                rdesc.start_idx = i;
+
+                iStride.addDesc(ldesc);
+                tStride.addDesc(rdesc);
+            } else if (run_count >= NIXL_STRIDE_MIN_COUNT) {
+                nixlStrideDesc ldesc = *lrec;
+                ldesc.addr      = lrec->addr + (uintptr_t)(li0 - lrec->start_idx) * lrec->stride;
+                ldesc.stride    = local_run_stride;
                 ldesc.count     = run_count;
                 ldesc.start_idx = i;
 
                 nixlStrideDesc rdesc = *rrec;
                 rdesc.addr      = rrec->addr + (uintptr_t)(ri0 - rrec->start_idx) * rrec->stride;
-                rdesc.stride    = delta_set ? (size_t)remote_delta * rrec->stride : rrec->stride;
+                rdesc.stride    = remote_run_stride;
                 rdesc.count     = run_count;
                 rdesc.start_idx = i;
 
