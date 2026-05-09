@@ -856,7 +856,7 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
 
     // Single-pass: validate indices/lengths and build descriptors together.
     // On error the unique_ptr cleans up the partially-built handle.
-    if (backend->supportsStrides() && use_stride) {
+    if (use_stride && backend->supportsStrides()) {
         auto sh = std::make_unique<nixlStrideXferReqH>(
             remote_side->remoteAgent, operation,
             local_dlist.getType(), remote_dlist.getType());
@@ -1000,29 +1000,44 @@ nixlAgent::makeXferReq (const nixl_xfer_op_t &operation,
                     return ret;
                 total_bytes += local_desc1.len;
 
-                // Address contiguity reduces to: delta * stride == len on each side.
-                while (i < desc_count - 1) {
-                    const int lnext = local_indices[i + 1];
-                    const int rnext = remote_indices[i + 1];
+                // If the prepped stride is gapped, adjacent selected indices cannot
+                // be merged into a flat descriptor. Skip the lookahead in that case.
+                const bool local_merge_possible =
+                    (ls.rec->count > 1) && (ls.rec->stride > 0) &&
+                    (ls.rec->stride <= ls.rec->len) &&
+                    ((ls.rec->len % ls.rec->stride) == 0);
+                const bool remote_merge_possible =
+                    (rs.rec->count > 1) && (rs.rec->stride > 0) &&
+                    (rs.rec->stride <= rs.rec->len) &&
+                    ((rs.rec->len % rs.rec->stride) == 0);
+                if (local_merge_possible && remote_merge_possible) {
+                    const size_t local_merge_delta = ls.rec->len / ls.rec->stride;
+                    const size_t remote_merge_delta = rs.rec->len / rs.rec->stride;
 
-                    if ((lnext < 0) || (lnext >= local_total) ||
-                        (rnext < 0) || (rnext >= remote_total))
-                        break;
+                    while (i < desc_count - 1) {
+                        const int lnext = local_indices[i + 1];
+                        const int rnext = remote_indices[i + 1];
 
-                    if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
-                        rnext < rs.rec->start_idx || rnext >= rs.rec_end)
-                        break;
+                        if ((lnext < 0) || (lnext >= local_total) ||
+                            (rnext < 0) || (rnext >= remote_total))
+                            break;
 
-                    const int ld = lnext - local_indices[i];
-                    const int rd = rnext - remote_indices[i];
-                    if ((size_t)ld * ls.rec->stride != ls.rec->len ||
-                        (size_t)rd * rs.rec->stride != rs.rec->len)
-                        break;
+                        if (lnext < ls.rec->start_idx || lnext >= ls.rec_end ||
+                            rnext < rs.rec->start_idx || rnext >= rs.rec_end)
+                            break;
 
-                    total_bytes      += ls.rec->len;
-                    local_desc1.len  += ls.rec->len;
-                    remote_desc1.len += rs.rec->len;
-                    i++;
+                        const int ld = lnext - local_indices[i];
+                        const int rd = rnext - remote_indices[i];
+                        if (ld <= 0 || rd <= 0 ||
+                            (size_t)ld != local_merge_delta ||
+                            (size_t)rd != remote_merge_delta)
+                            break;
+
+                        total_bytes      += ls.rec->len;
+                        local_desc1.len  += ls.rec->len;
+                        remote_desc1.len += rs.rec->len;
+                        i++;
+                    }
                 }
 
                 (*handle->initiatorDescs)[j] = local_desc1;
